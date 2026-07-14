@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>First Tone</title>
+<style>
+:root {
+  --bg: #F5F4F0; --surface: #FFFFFF; --surface2: #F0EEE8;
+  --border: #E0DDD5; --text: #1C1A17; --muted: #8A8378;
+  --accent: #1B4F72; --accent-light: #EAF1F8;
+  --green: #1E6E42; --green-light: #E8F5EE;
+  --red: #B92E2E; --red-light: #FBEAEA;
+  --orange: #C45E0A; --orange-light: #FDF0E6;
+  --radius: 10px; --radius-lg: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.4; }
+.screen { display: none; min-height: 100vh; flex-direction: column; }
+.screen.active { display: flex; }
+.topbar { background: var(--accent); color: white; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 50; }
+.topbar-back { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: none; background: rgba(255,255,255,0.15); color: white; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+.topbar h1 { font-size: 16px; font-weight: 700; flex: 1; }
+.topbar-action { background: rgba(255,255,255,0.15); border: none; color: white; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.content { flex: 1; padding: 16px; overflow-y: auto; }
+button { cursor: pointer; border: none; font-family: inherit; }
+button:active { opacity: 0.75; }
+.btn { padding: 12px 16px; border-radius: var(--radius); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-full { width: 100%; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-green { background: var(--green); color: white; }
+.btn-red { background: var(--red); color: white; }
+.btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+.btn-ghost { background: var(--surface2); color: var(--text); }
+.btn-sm { padding: 8px 12px; font-size: 13px; border-radius: 8px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 10px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-green { background: var(--green-light); color: var(--green); }
+.badge-orange { background: var(--orange-light); color: var(--orange); }
+.badge-red { background: var(--red-light); color: var(--red); }
+.badge-blue { background: var(--accent-light); color: var(--accent); }
+input[type="text"], input[type="number"], input[type="password"], select, textarea {
+  width: 100%; padding: 11px 13px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  font-size: 15px; font-family: inherit; background: var(--bg); color: var(--text); outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); background: white; }
+.field { margin-bottom: 14px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px; }
+.divider { height: 1px; background: var(--border); margin: 14px 0; }
+.section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 8px 0 6px; }
+.row-between { display: flex; justify-content: space-between; align-items: center; }
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+.overlay.open { display: flex; }
+.overlay-box { background: var(--surface); border-radius: 20px 20px 0 0; padding: 20px 16px 36px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.overlay-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+.overlay-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.numpad-display { font-size: 38px; font-weight: 800; text-align: center; color: var(--accent); padding: 8px 0 14px; min-height: 60px; letter-spacing: 2px; }
+.numpad-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.nk { height: 60px; border-radius: 10px; font-size: 22px; font-weight: 600; border: none; cursor: pointer; background: var(--bg); color: var(--text); }
+.nk:active { background: var(--border); }
+.nk.zero { grid-column: span 2; }
+.nk.del { background: var(--surface2); }
+.nk.confirm { background: var(--green); color: white; }
+.nk.cancel-k { background: var(--surface2); }
+.alpha-display { background: var(--accent); color: white; border-radius: 10px; padding: 12px 14px; font-size: 20px; font-weight: 700; text-align: center; min-height: 48px; margin-bottom: 10px; letter-spacing: 1px; word-break: break-all; }
+.alpha-results { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; display: none; }
+.alpha-result-btn { width: 100%; text-align: left; padding: 11px 14px; border: none; border-bottom: 1px solid var(--border); cursor: pointer; background: white; display: block; }
+.alpha-result-btn:last-child { border-bottom: none; }
+.alpha-result-btn:active { background: var(--bg); }
+.alpha-result-name { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.alpha-result-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.alpha-keys { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.ak { min-width: 36px; height: 38px; border-radius: 7px; font-size: 14px; font-weight: 700; background: var(--bg); border: 1.5px solid var(--border); color: var(--text); cursor: pointer; flex-shrink: 0; padding: 0 4px; }
+.ak:active { background: var(--border); }
+.alpha-btns { display: flex; gap: 6px; }
+.alpha-btns button { flex: 1; height: 44px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: var(--surface2); color: var(--text); }
+#screen-pin { background: var(--accent); align-items: center; justify-content: center; padding: 40px 24px; }
+.pin-logo { font-size: 48px; margin-bottom: 16px; }
+.pin-title { color: white; font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.pin-sub { color: rgba(255,255,255,0.65); font-size: 14px; margin-bottom: 40px; }
+.pin-dots { display: flex; gap: 14px; margin-bottom: 32px; }
+.pin-dot { width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,0.3); transition: background 0.15s; }
+.pin-dot.filled { background: white; }
+.pin-pad { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; width: 100%; max-width: 280px; }
+.pin-btn { height: 70px; border-radius: 14px; font-size: 24px; font-weight: 700; background: rgba(255,255,255,0.15); color: white; border: none; cursor: pointer; }
+.pin-btn:active { background: rgba(255,255,255,0.3); }
+.pin-role-select { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; margin-bottom: 32px; }
+.pin-role-btn { padding: 16px; border-radius: 14px; background: rgba(255,255,255,0.15); color: white; font-size: 16px; font-weight: 700; border: none; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 12px; }
+.pin-role-btn:active { background: rgba(255,255,255,0.25); }
+.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.home-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+.home-tile:active { opacity: 0.8; }
+.home-tile-icon { font-size: 28px; }
+.home-tile-name { font-size: 14px; font-weight: 700; }
+.home-tile-sub { font-size: 12px; color: var(--muted); }
+.person-btn { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 13px 14px; text-align: left; font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 8px; }
+.person-btn:active { background: var(--accent-light); border-color: var(--accent); }
+.person-btn .sub { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.scan-box { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 12px; }
+.scan-row { display: flex; gap: 8px; }
+.scan-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 8px; display: block; }
+.scanned-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.scanned-item:last-child { border-bottom: none; }
+.scanned-name { flex: 1; font-size: 13px; font-weight: 600; line-height: 1.35; }
+.scanned-price { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.scanned-remove { width: 28px; height: 28px; border-radius: 7px; background: var(--red-light); color: var(--red); font-size: 16px; font-weight: 700; border: none; flex-shrink: 0; }
+.sale-total-bar { background: var(--accent); color: white; border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+.flash-card { background: var(--green-light); border: 2px solid var(--green); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 12px; display: none; }
+.flash-card.show { display: block; }
+.flash-name { font-size: 14px; font-weight: 700; color: var(--green); }
+.flash-qty-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.flash-qty-num { font-size: 32px; font-weight: 900; color: var(--green); }
+.flash-price { font-size: 12px; color: var(--muted); }
+.flash-btns { display: flex; gap: 6px; margin-left: auto; }
+.flash-btn { width: 48px; height: 48px; border-radius: 10px; font-size: 22px; font-weight: 700; background: white; border: 1.5px solid var(--border); cursor: pointer; }
+.inv-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.inv-item.low-stock { border-left: 3px solid var(--orange); }
+.inv-item.zero-stock { border-left: 3px solid var(--red); }
+.inv-item.uncounted { border-left: 3px solid var(--muted); }
+.inv-item-info { flex: 1; min-width: 0; }
+.inv-item-name { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.inv-item-code { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.inv-item-right { text-align: right; flex-shrink: 0; }
+.inv-qty { font-size: 22px; font-weight: 800; color: var(--accent); line-height: 1; }
+.inv-qty.zero { color: var(--red); }
+.inv-qty.null-qty { color: var(--muted); font-size: 16px; }
+.inv-price { font-size: 11px; color: var(--muted); }
+.inv-total { font-size: 12px; font-weight: 600; color: var(--green); }
+.settings-section { margin-bottom: 20px; }
+.settings-section-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.settings-row { background: var(--surface); border-bottom: 1px solid var(--border); padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.settings-row:last-child { border-bottom: none; }
+.settings-label { font-size: 14px; font-weight: 500; }
+.settings-value { font-size: 13px; color: var(--muted); }
+.toggle { width: 44px; height: 26px; background: var(--border); border-radius: 13px; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; border: none; }
+.toggle.on { background: var(--green); }
+.toggle::after { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 3px; left: 3px; transition: transform 0.2s; }
+.toggle.on::after { transform: translateX(18px); }
+.filter-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.chip { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--surface); border: 1.5px solid var(--border); color: var(--muted); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: white; }
+.stats-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.stat-pill { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--muted); }
+.stat-pill strong { color: var(--text); }
+.receipt { background: white; border-radius: var(--radius-lg); padding: 20px; font-family: 'Courier New', monospace; }
+.receipt-header { text-align: center; margin-bottom: 16px; }
+.receipt-title { font-size: 18px; font-weight: 700; }
+.receipt-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.receipt-divider { border: none; border-top: 1px dashed var(--border); margin: 12px 0; }
+.receipt-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; gap: 8px; }
+.receipt-row.total { font-weight: 700; font-size: 15px; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.receipt-status { text-align: center; margin-top: 14px; }
+.po-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.po-item:last-child { border-bottom: none; }
+.po-name { flex: 1; }
+.po-qty-control { display: flex; align-items: center; gap: 6px; }
+.po-qty-btn { width: 30px; height: 30px; border-radius: 7px; background: var(--surface2); border: 1px solid var(--border); font-size: 18px; font-weight: 700; cursor: pointer; }
+.po-qty-num { font-size: 16px; font-weight: 700; min-width: 28px; text-align: center; }
+.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #1C1A17; color: white; padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 999; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap; }
+.toast.show { opacity: 1; }
+.empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty-icon { font-size: 36px; margin-bottom: 10px; }
+.empty-text { font-size: 14px; }
+.barcode-wrap { text-align: center; background: white; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<!-- PIN SCREEN -->
+<div class="screen active" id="screen-pin">
+  <div class="pin-logo">🎵</div>
+  <div class="pin-title">First Tone</div>
+  <div class="pin-sub">Book & Stock System</div>
+  <div id="pin-role-select">
+    <div class="pin-role-select">
+      <button class="pin-role-btn" onclick="selectRole('staff')">
+        <span style="font-size:24px;">🛒</span>
+        <div><div>Staff / Teacher</div><div style="font-size:12px;opacity:0.65;font-weight:400;margin-top:2px;">Sales & payments</div></div>
+      </button>
+      <button class="pin-role-btn" onclick="selectRole('admin')">
+        <span style="font-size:24px;">⚙️</span>
+        <div><div>Admin</div><div style="font-size:12px;opacity:0.65;font-weight:400;margin-top:2px;">Full access</div></div>
+      </button>
+    </div>
+  </div>
+  <div id="pin-entry" style="display:none;flex-direction:column;align-items:center;">
+    <div style="color:rgba(255,255,255,0.75);font-size:14px;margin-bottom:20px;" id="pin-prompt">Enter PIN</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-btn" onclick="pinPress('1')">1</button>
+      <button class="pin-btn" onclick="pinPress('2')">2</button>
+      <button class="pin-btn" onclick="pinPress('3')">3</button>
+      <button class="pin-btn" onclick="pinPress('4')">4</button>
+      <button class="pin-btn" onclick="pinPress('5')">5</button>
+      <button class="pin-btn" onclick="pinPress('6')">6</button>
+      <button class="pin-btn" onclick="pinPress('7')">7</button>
+      <button class="pin-btn" onclick="pinPress('8')">8</button>
+      <button class="pin-btn" onclick="pinPress('9')">9</button>
+      <button class="pin-btn" style="background:transparent;"></button>
+      <button class="pin-btn" onclick="pinPress('0')">0</button>
+      <button class="pin-btn" onclick="pinDel()">⌫</button>
+    </div>
+    <div style="color:#FF8A80;font-size:13px;margin-top:16px;min-height:20px;text-align:center;" id="pin-error"></div>
+    <button style="color:rgba(255,255,255,0.6);background:transparent;border:none;font-size:13px;margin-top:16px;" onclick="backToRoleSelect()">← Back</button>
+  </div>
+</div>
+
+<!-- HOME -->
+<div class="screen" id="screen-home">
+  <div class="topbar">
+    <div style="font-size:20px;">🎵</div>
+    <h1>First Tone</h1>
+    <button class="topbar-action" onclick="logout()">Exit</button>
+  </div>
+  <div class="content">
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;color:var(--muted);" id="home-greeting">Good morning</div>
+      <div style="font-size:18px;font-weight:700;margin-top:2px;" id="home-role-display">Staff</div>
+    </div>
+    <div class="home-grid" id="home-grid"></div>
+  </div>
+</div>
+
+<!-- SALES -->
+<div class="screen" id="screen-sales">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1 id="sales-topbar-title">New Sale</h1>
+    <button class="topbar-action" id="sales-topbar-btn" style="display:none;"></button>
+  </div>
+  <div class="content" id="sales-content"></div>
+</div>
+
+<!-- OUTSTANDING -->
+<div class="screen" id="screen-outstanding">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1>Outstanding</h1>
+    <button class="topbar-action" onclick="openScreen('screen-invoicehistory')">History</button>
+  </div>
+  <div class="content">
+    <div class="filter-row">
+      <div class="chip active" onclick="setChip(this,'outstanding');outstandingFilter='all';renderOutstanding()">All</div>
+      <div class="chip" onclick="setChip(this,'outstanding');outstandingFilter='unpaid';renderOutstanding()">Unpaid</div>
+      <div class="chip" onclick="setChip(this,'outstanding');outstandingFilter='partial';renderOutstanding()">Partial</div>
+      <div class="chip" onclick="setChip(this,'outstanding');outstandingFilter='overdue';renderOutstanding()">30+ days</div>
+    </div>
+    <div id="outstanding-list"></div>
+  </div>
+</div>
+
+<!-- INVOICE HISTORY -->
+<div class="screen" id="screen-invoicehistory">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-outstanding')">←</button>
+    <h1>Invoice History</h1>
+    <button class="topbar-action" onclick="exportInvoiceHistory()">Export</button>
+  </div>
+  <div class="content" id="invoice-history-list"></div>
+</div>
+
+<!-- INVENTORY -->
+<div class="screen" id="screen-inventory">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1>Inventory</h1>
+    <button class="topbar-action" onclick="openScreen('screen-stockcount')">Count</button>
+  </div>
+  <div class="content">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="openListAlpha()">🔍 Search</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddItem()">+ Add</button>
+    </div>
+    <div id="list-search-active" style="display:none;background:var(--accent-light);border:1.5px solid var(--accent);border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;" onclick="clearListSearch()"></div>
+    <div class="filter-row">
+      <div class="chip active" onclick="setChip(this,'inv');invFilter='all';renderInvList()">All</div>
+      <div class="chip" onclick="setChip(this,'inv');invFilter='books';renderInvList()">Books</div>
+      <div class="chip" onclick="setChip(this,'inv');invFilter='stock';renderInvList()">Stock</div>
+      <div class="chip" onclick="setChip(this,'inv');invFilter='low';renderInvList()">⚠ Low</div>
+      <div class="chip" onclick="setChip(this,'inv');invFilter='zero';renderInvList()">Zero</div>
+    </div>
+    <div class="stats-row" id="inv-stats"></div>
+    <div id="inv-list"></div>
+  </div>
+</div>
+
+<!-- STOCK COUNT -->
+<div class="screen" id="screen-stockcount">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-inventory')">←</button>
+    <h1>Stock Count</h1>
+    <button class="topbar-action" onclick="openScreen('screen-export')">Export</button>
+  </div>
+  <div class="content">
+    <div class="scan-box">
+      <span class="scan-label">Scan barcode</span>
+      <div class="scan-row">
+        <input type="text" id="countBarcodeInput" placeholder="Scan barcode here..." autocomplete="off">
+        <button class="btn btn-primary btn-sm" onclick="handleCountScan()">Go</button>
+      </div>
+    </div>
+    <div id="count-flash"></div>
+    <div id="count-unknown" style="display:none;"></div>
+    <div class="divider"></div>
+    <div class="stats-row" id="count-stats"></div>
+    <div id="count-list"></div>
+  </div>
+</div>
+
+<!-- ADD/EDIT ITEM -->
+<div class="screen" id="screen-additem">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-inventory')">←</button>
+    <h1 id="additem-title">Add Item</h1>
+  </div>
+  <div class="content">
+    <div class="field">
+      <label>Item Name</label>
+      <div id="additem-name-display" style="padding:11px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius);font-size:15px;color:var(--muted);display:none;"></div>
+      <input type="text" id="additem-name" placeholder="e.g. Piano Lesson Made Easy Grade 1">
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <select id="additem-type"><option value="book">Book</option><option value="stock">Stock / Instrument / Accessory</option></select>
+    </div>
+    <div class="field">
+      <label>Selling Price (RM)</label>
+      <input type="number" id="additem-price" placeholder="0.00" step="0.01" min="0" oninput="updateMargin()">
+    </div>
+    <div class="field">
+      <label>Cost Price (RM) — admin only</label>
+      <input type="number" id="additem-cost" placeholder="0.00" step="0.01" min="0" oninput="updateMargin()">
+      <div id="additem-margin" style="font-size:12px;color:var(--green);margin-top:6px;display:none;"></div>
+    </div>
+    <div class="field">
+      <label>Low Stock Alert</label>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:13px;flex:1;">Alert when below 5 units</span>
+        <button class="toggle on" id="additem-alert-toggle" onclick="toggleAddAlert()"></button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Barcode / ISBN</label>
+      <div id="additem-barcode-display" style="padding:11px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--muted);word-break:break-all;display:none;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;" id="additem-barcode-btns">
+        <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="startScanBarcode()">📷 Scan</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="generateBarcode()">🔢 Generate</button>
+      </div>
+      <input type="text" id="additem-barcode-input" placeholder="Scan barcode now..." style="display:none;margin-top:8px;">
+    </div>
+    <div id="additem-barcode-preview" style="display:none;" class="barcode-wrap"></div>
+    <div id="additem-delete-wrap" style="display:none;margin-bottom:10px;">
+      <button class="btn btn-red btn-full btn-sm" onclick="deleteItem()">🗑 Delete item</button>
+    </div>
+    <button class="btn btn-green btn-full" onclick="saveItem()">Save</button>
+  </div>
+</div>
+
+<!-- RESTOCK -->
+<div class="screen" id="screen-restock">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1>Restock</h1>
+    <button class="topbar-action" onclick="sendPO()">📤 WhatsApp</button>
+  </div>
+  <div class="content">
+    <div class="card" style="background:var(--orange-light);border-color:var(--orange);margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;color:var(--orange);">⚠ Low Stock Items</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px;">Adjust order quantities, then tap WhatsApp to send.</div>
+    </div>
+    <div id="po-list"></div>
+    <div class="divider"></div>
+    <div class="section-title">Record incoming stock</div>
+    <div style="margin-top:10px;">
+      <button class="btn btn-ghost btn-full btn-sm" onclick="openRestockAlpha()">🔍 Search item to add stock</button>
+    </div>
+    <div id="restock-incoming-list" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- EXPORT -->
+<div class="screen" id="screen-export">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-stockcount')">←</button>
+    <h1>Export to Accountant</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Count Progress</div>
+      <div style="background:var(--border);border-radius:10px;height:8px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:100%;background:var(--accent);border-radius:10px;transition:width 0.3s;" id="export-progress-bar" style="width:0%"></div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);" id="export-progress-label"></div>
+    </div>
+    <div class="card" id="export-summary"></div>
+    <div style="height:12px;"></div>
+    <button class="btn btn-green btn-full" onclick="exportToCSV()">📥 Download Excel (CSV)</button>
+    <div style="height:8px;"></div>
+    <button class="btn btn-outline btn-full btn-sm" onclick="resetCount()">🔄 Reset count (new year)</button>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="screen" id="screen-settings">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1>Settings</h1>
+  </div>
+  <div class="content">
+    <div class="settings-section">
+      <div class="section-title">Staff & Access</div>
+      <div class="settings-section-wrap">
+        <div class="settings-row" onclick="openScreen('screen-manage-staff')"><span class="settings-label">Manage staff names</span><span>›</span></div>
+        <div class="settings-row" onclick="openChangePIN('staff')"><span class="settings-label">Staff PIN</span><span class="settings-value">••••</span></div>
+        <div class="settings-row" onclick="openChangePIN('admin')"><span class="settings-label">Admin PIN</span><span class="settings-value">••••</span></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="section-title">Students & Teachers</div>
+      <div class="settings-section-wrap">
+        <div class="settings-row" onclick="openScreen('screen-manage-teachers')"><span class="settings-label">Manage teachers</span><span>›</span></div>
+        <div class="settings-row" onclick="openScreen('screen-manage-students')"><span class="settings-label">Manage students</span><span>›</span></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="section-title">Supplier</div>
+      <div class="settings-section-wrap">
+        <div class="settings-row" onclick="openScreen('screen-supplier')"><span class="settings-label">Book supplier</span><span class="settings-value" id="supplier-preview">Not set</span></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="section-title">Data</div>
+      <div class="settings-section-wrap">
+        <div class="settings-row" onclick="backupData()"><span class="settings-label">Backup data (JSON)</span><span>↓</span></div>
+        <div class="settings-row" onclick="document.getElementById('restoreInput').click()"><span class="settings-label">Restore from backup</span><span>↑</span></div>
+        <input type="file" id="restoreInput" accept=".json" style="display:none;" onchange="restoreData(event)">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE TEACHERS -->
+<div class="screen" id="screen-manage-teachers">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-settings')">←</button>
+    <h1>Teachers</h1>
+    <button class="topbar-action" onclick="openAddPerson('teacher')">+ Add</button>
+  </div>
+  <div class="content" id="teachers-list"></div>
+</div>
+
+<!-- MANAGE STUDENTS -->
+<div class="screen" id="screen-manage-students">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-settings')">←</button>
+    <h1>Students</h1>
+    <button class="topbar-action" onclick="openAddPerson('student')">+ Add</button>
+  </div>
+  <div class="content">
+    <div style="margin-bottom:10px;"><button class="btn btn-ghost btn-sm btn-full" onclick="openStudentAlpha()">🔍 Search student</button></div>
+    <div id="students-list"></div>
+  </div>
+</div>
+
+<!-- MANAGE STAFF -->
+<div class="screen" id="screen-manage-staff">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-settings')">←</button>
+    <h1>Staff Names</h1>
+    <button class="topbar-action" onclick="openAddPerson('staff')">+ Add</button>
+  </div>
+  <div class="content" id="staff-list"></div>
+</div>
+
+<!-- SUPPLIER -->
+<div class="screen" id="screen-supplier">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-settings')">←</button>
+    <h1>Supplier</h1>
+  </div>
+  <div class="content">
+    <div class="field"><label>Supplier Name</label><input type="text" id="supplier-name" placeholder="e.g. Music House Sdn Bhd"></div>
+    <div class="field"><label>WhatsApp (with country code)</label><input type="text" id="supplier-wa" placeholder="60123456789"></div>
+    <div class="field"><label>Notes</label><textarea id="supplier-notes" rows="3" placeholder="Delivery days, contact person..."></textarea></div>
+    <button class="btn btn-green btn-full" onclick="saveSupplier()">Save</button>
+  </div>
+</div>
+
+<!-- STUDENT PROFILE -->
+<div class="screen" id="screen-student-profile">
+  <div class="topbar">
+    <button class="topbar-back" onclick="openScreen('screen-manage-students')">←</button>
+    <h1 id="student-profile-name">Student</h1>
+    <button class="topbar-action" onclick="editCurrentStudent()">Edit</button>
+  </div>
+  <div class="content" id="student-profile-content"></div>
+</div>
+
+<!-- WRITE-OFFS -->
+<div class="screen" id="screen-writeoffs">
+  <div class="topbar">
+    <button class="topbar-back" onclick="goHome()">←</button>
+    <h1>Write-offs</h1>
+  </div>
+  <div class="content" id="writeoffs-list"></div>
+</div>
+
+<!-- OVERLAYS -->
+
+<!-- Numpad -->
+<div class="overlay" id="numpad-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:4px;" id="numpad-label">Enter amount</div>
+    <div class="numpad-display" id="numpad-display">0</div>
+    <div class="numpad-grid">
+      <button class="nk" onclick="nkPress('1')">1</button><button class="nk" onclick="nkPress('2')">2</button><button class="nk" onclick="nkPress('3')">3</button>
+      <button class="nk" onclick="nkPress('4')">4</button><button class="nk" onclick="nkPress('5')">5</button><button class="nk" onclick="nkPress('6')">6</button>
+      <button class="nk" onclick="nkPress('7')">7</button><button class="nk" onclick="nkPress('8')">8</button><button class="nk" onclick="nkPress('9')">9</button>
+      <button class="nk zero" onclick="nkPress('0')">0</button><button class="nk del" onclick="nkDel()">⌫</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="nk cancel-k" style="flex:1;height:52px;font-size:15px;" onclick="closeNumpad()">Cancel</button>
+      <button class="nk confirm" style="flex:2;height:52px;font-size:16px;" onclick="nkConfirm()">✓ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Alpha keyboard -->
+<div class="overlay" id="alpha-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--muted);text-align:center;margin-bottom:8px;" id="alpha-title">Search</div>
+    <div class="alpha-display" id="alpha-display">_</div>
+    <div class="alpha-results" id="alpha-results"></div>
+    <div class="alpha-keys" id="alpha-keys"></div>
+    <div class="alpha-btns">
+      <button onclick="alphaDel()">⌫</button>
+      <button style="flex:2;" onclick="alphaSpace()">Space</button>
+      <button onclick="closeAlpha()">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- Payment overlay -->
+<div class="overlay" id="payment-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div class="overlay-title">Record Payment</div>
+    <div class="field"><label>Invoice</label><div style="font-size:13px;color:var(--muted);" id="payment-invoice-info"></div></div>
+    <div class="field"><label>Outstanding</label><div style="font-size:22px;font-weight:800;color:var(--red);" id="payment-outstanding"></div></div>
+    <div class="field">
+      <label>Amount (RM)</label>
+      <button class="btn btn-ghost btn-full" onclick="openNumpadForPayment()" style="justify-content:flex-start;font-size:15px;">
+        <span id="payment-amount-display" style="color:var(--muted);">Tap to enter amount</span>
+      </button>
+    </div>
+    <div class="field">
+      <label>Payment method</label>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" style="flex:1;" id="pay-cash-btn" onclick="selectPayMethod('cash')">💵 Cash</button>
+        <button class="btn btn-outline btn-sm" style="flex:1;" id="pay-transfer-btn" onclick="selectPayMethod('transfer')">📱 Transfer</button>
+      </div>
+    </div>
+    <div class="field"><label>Date</label><div style="font-size:14px;padding:11px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius);" id="payment-date-display"></div></div>
+    <button class="btn btn-green btn-full" onclick="confirmPayment()">Confirm Payment</button>
+  </div>
+</div>
+
+<!-- Add person overlay -->
+<div class="overlay" id="addperson-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div class="overlay-title" id="addperson-title">Add</div>
+    <div class="field"><label>Name</label><input type="text" id="addperson-name" placeholder="Full name"></div>
+    <div class="field" id="addperson-teacher-field" style="display:none;">
+      <label>Teacher</label>
+      <select id="addperson-teacher"></select>
+    </div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="addperson-notes" placeholder="e.g. Mon 3pm class"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-red btn-sm" id="addperson-delete-btn" style="display:none;" onclick="deletePerson()">🗑</button>
+      <button class="btn btn-green btn-full" onclick="savePerson()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt overlay -->
+<div class="overlay" id="receipt-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div id="receipt-content"></div>
+    <div style="height:12px;"></div>
+    <button class="btn btn-primary btn-full" onclick="downloadReceipt()">📥 Download image</button>
+    <div style="height:8px;"></div>
+    <button class="btn btn-outline btn-full btn-sm" onclick="closeReceipt()">Done</button>
+  </div>
+</div>
+
+<!-- Invoice detail overlay -->
+<div class="overlay" id="invoice-detail-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div id="invoice-detail-content"></div>
+    <div style="height:12px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" style="flex:1;" onclick="downloadInvoiceImage()">📥 Save</button>
+      <button class="btn btn-green btn-sm" style="flex:1;" id="inv-detail-pay-btn" onclick="openPayFromDetail()">💰 Pay</button>
+      <button class="btn btn-outline btn-sm" id="inv-detail-cancel-btn" onclick="cancelInvoice()">Cancel</button>
+      <button class="btn btn-red btn-sm" id="inv-detail-writeoff-btn" onclick="writeOffInvoice()">Write-off</button>
+    </div>
+    <div style="height:8px;"></div>
+    <button class="btn btn-ghost btn-sm btn-full" onclick="closeInvoiceDetail()">Close</button>
+  </div>
+</div>
+
+<!-- Change PIN overlay -->
+<div class="overlay" id="change-pin-overlay">
+  <div class="overlay-box">
+    <div class="overlay-handle"></div>
+    <div class="overlay-title" id="change-pin-title">Change PIN</div>
+    <div class="field"><label>New PIN (4 digits)</label><input type="password" id="new-pin-input" maxlength="4" placeholder="••••" inputmode="numeric"></div>
+    <div class="field"><label>Confirm PIN</label><input type="password" id="confirm-pin-input" maxlength="4" placeholder="••••" inputmode="numeric"></div>
+    <button class="btn btn-green btn-full" onclick="savePIN()">Save PIN</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+</body>
+</html>
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+// TODO: Replace with deployed Google Apps Script URL when ready
+const APPS_SCRIPT_URL = '';
+const DB_KEY = 'firsttone_v2';
+
+// ── DEFAULT DB ────────────────────────────────────────────────────────────────
+function defaultDB() {
+  return {
+    settings: { staffPIN: '1234', adminPIN: '9999', lowStockThreshold: 5, supplier: { name:'', wa:'', notes:'' } },
+    staff: [{ id:'s1', name:'Front Desk' }],
+    teachers: [{ id:'t1', name:'Teacher A' }, { id:'t2', name:'Teacher B' }],
+    students: [
+      { id:'stu1', name:'Ahmad Bin Ali', teacherId:'t1', notes:'Mon 3pm' },
+      { id:'stu2', name:'Siti Binti Hassan', teacherId:'t1', notes:'' },
+      { id:'stu3', name:'Wei Chen', teacherId:'t2', notes:'Sat 10am' }
+    ],
+    items: {
+      '9789670362175': { name:'Theory of Music Made Easy Grade 1', type:'book', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      '9789670362182': { name:'Theory of Music Made Easy Grade 2', type:'book', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      'INST-001': { name:'Ukulele (Standard)', type:'stock', price:200, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      'ACC-001': { name:'Guitar Capo', type:'stock', price:24, cost:0, qty:null, alertOn:true, createdAt:Date.now() }
+    },
+    invoices: [],
+    writeoffs: []
+  };
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let db = {};
+let currentRole = '';
+let editingItemBarcode = null;
+let editingPersonType = null;
+let editingPersonId = null;
+let currentInvoiceId = null;
+let currentPaymentInvoiceId = null;
+let paymentAmount = 0;
+let paymentMethod = '';
+let outstandingFilter = 'all';
+let invFilter = 'all';
+let listSearchQuery = '';
+let countFlashTimer = null;
+let additemAlertOn = true;
+let changingPINRole = '';
+let poQtys = {};
+let currentStudentId = null;
+
+// Sale
+let sale = { step:0, buyerType:'', teacherId:'', studentId:'', staffId:'', items:[], discount:0 };
+
+// Numpad
+let npState = { val:'0', cb:null };
+
+// Alpha
+let alphaState = { str:'', cb:null, filterFn:null, title:'' };
+
+// ── DB ────────────────────────────────────────────────────────────────────────
+function loadDB() {
+  const s = localStorage.getItem(DB_KEY);
+  db = s ? JSON.parse(s) : defaultDB();
+  if (!db.writeoffs) db.writeoffs = [];
+  if (!db.staff) db.staff = [{ id:'s1', name:'Front Desk' }];
+  saveDB();
+}
+function saveDB() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function fmtRM(n) { return 'RM ' + parseFloat(n||0).toFixed(2); }
+function fmtDate(ts) { return new Date(ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDT(ts) { return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function esc(s) { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function nextInvNo() {
+  const y = new Date().getFullYear();
+  const n = db.invoices.filter(i=>i.no.startsWith('INV-'+y)).length + 1;
+  return 'INV-'+y+'-'+String(n).padStart(4,'0');
+}
+
+// ── SCREEN NAV ────────────────────────────────────────────────────────────────
+function openScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+  if (id==='screen-inventory') renderInvList();
+  if (id==='screen-stockcount') renderCountList();
+  if (id==='screen-outstanding') renderOutstanding();
+  if (id==='screen-invoicehistory') renderInvoiceHistory();
+  if (id==='screen-manage-teachers') renderTeachers();
+  if (id==='screen-manage-students') renderStudents();
+  if (id==='screen-manage-staff') renderStaffList();
+  if (id==='screen-restock') renderRestock();
+  if (id==='screen-export') renderExport();
+  if (id==='screen-writeoffs') renderWriteoffs();
+  if (id==='screen-supplier') loadSupplierForm();
+  if (id==='screen-additem') initAddItemScreen();
+}
+function goHome() { openScreen('screen-home'); }
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function setChip(el, group) {
+  document.querySelectorAll('#screen-'+group+' .chip, #screen-'+group+'count .chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+}
+function downloadCSV(csv, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download = filename; a.click();
+  showToast('Downloaded: '+filename);
+}
+
+// ── PIN ───────────────────────────────────────────────────────────────────────
+let pinBuf = '', pinRole = '';
+function selectRole(r) {
+  pinRole = r; pinBuf = '';
+  document.getElementById('pin-role-select').style.display='none';
+  const e=document.getElementById('pin-entry'); e.style.display='flex';
+  document.getElementById('pin-prompt').textContent = r==='admin'?'Admin PIN':'Staff PIN';
+  updateDots();
+}
+function backToRoleSelect() {
+  document.getElementById('pin-role-select').style.display='';
+  document.getElementById('pin-entry').style.display='none';
+  document.getElementById('pin-error').textContent=''; pinBuf='';
+}
+function pinPress(d) {
+  if (pinBuf.length>=4) return;
+  pinBuf+=d; updateDots();
+  if (pinBuf.length===4) setTimeout(checkPIN,120);
+}
+function pinDel() { pinBuf=pinBuf.slice(0,-1); updateDots(); }
+function updateDots() { for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled',i<pinBuf.length); }
+function checkPIN() {
+  const correct = pinRole==='admin'?db.settings.adminPIN:db.settings.staffPIN;
+  if (pinBuf===correct) { currentRole=pinRole; document.getElementById('pin-error').textContent=''; loginSuccess(); }
+  else { document.getElementById('pin-error').textContent='Incorrect PIN. Try again.'; pinBuf=''; updateDots(); }
+}
+function loginSuccess() {
+  openScreen('screen-home');
+  const h=new Date().getHours();
+  document.getElementById('home-greeting').textContent=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  document.getElementById('home-role-display').textContent=currentRole==='admin'?'👑 Admin':'🛒 Staff';
+  renderHomeGrid();
+}
+function logout() { currentRole=''; pinBuf=''; updateDots(); backToRoleSelect(); openScreen('screen-pin'); }
+
+// ── HOME GRID ─────────────────────────────────────────────────────────────────
+function renderHomeGrid() {
+  const tiles = [
+    {icon:'🛒',name:'New Sale',sub:'Scan & sell books',action:"initSale();openScreen('screen-sales')",always:true},
+    {icon:'💰',name:'Outstanding',sub:'Collect payments',action:"openScreen('screen-outstanding')",always:true},
+    {icon:'📦',name:'Inventory',sub:'View & edit stock',action:"openScreen('screen-inventory')",admin:true},
+    {icon:'📋',name:'Restock',sub:'Order & receive',action:"openScreen('screen-restock')",admin:true},
+    {icon:'🗂',name:'Write-offs',sub:'Bad debt history',action:"openScreen('screen-writeoffs')",admin:true},
+    {icon:'⚙️',name:'Settings',sub:'PIN, staff, supplier',action:"openScreen('screen-settings')",admin:true}
+  ];
+  document.getElementById('home-grid').innerHTML = tiles
+    .filter(t=>t.always||(t.admin&&currentRole==='admin'))
+    .map(t=>`<div class="home-tile" onclick="${t.action}"><div class="home-tile-icon">${t.icon}</div><div class="home-tile-name">${t.name}</div><div class="home-tile-sub">${t.sub}</div></div>`).join('');
+}
+
+// ── SALES ─────────────────────────────────────────────────────────────────────
+function initSale() {
+  sale={step:0,buyerType:'',teacherId:'',studentId:'',staffId:'',items:[],discount:0};
+  renderSaleStep();
+}
+
+function renderSaleStep() {
+  const content=document.getElementById('sales-content');
+  const title=document.getElementById('sales-topbar-title');
+  const btn=document.getElementById('sales-topbar-btn');
+  btn.style.display='none';
+
+  if (sale.step===0) {
+    title.textContent='New Sale';
+    content.innerHTML=`
+      <div class="section-title" style="margin-bottom:10px;">Who is buying?</div>
+      <button class="person-btn" onclick="pickBuyerType('student')"><div><div>Student</div><div class="sub">Original price</div></div><span>›</span></button>
+      <button class="person-btn" onclick="pickBuyerType('teacher')"><div><div>Teacher</div><div class="sub">20% discount</div></div><span>›</span></button>
+      <div class="divider"></div>
+      <div class="section-title" style="margin-bottom:10px;">Handled by</div>
+      <div id="staff-sel"></div>`;
+    renderStaffSel();
+
+  } else if (sale.step===1) {
+    title.textContent='Select Teacher';
+    content.innerHTML=`<div class="section-title" style="margin-bottom:10px;">Student's teacher</div><div id="teacher-pick"></div>`;
+    db.teachers.sort((a,b)=>a.name.localeCompare(b.name)).forEach(t=>{
+      const b=document.createElement('button'); b.className='person-btn';
+      b.innerHTML=`<div>${t.name}</div><span>›</span>`;
+      b.onclick=()=>{sale.teacherId=t.id;sale.step=2;renderSaleStep();};
+      document.getElementById('teacher-pick').appendChild(b);
+    });
+
+  } else if (sale.step===2) {
+    title.textContent='Select Student';
+    const teacher=db.teachers.find(t=>t.id===sale.teacherId);
+    const students=db.students.filter(s=>s.teacherId===sale.teacherId).sort((a,b)=>a.name.localeCompare(b.name));
+    content.innerHTML=`<div class="section-title" style="margin-bottom:10px;">Students under ${teacher?teacher.name:''}</div><div id="student-pick"></div>`;
+    if (!students.length) { document.getElementById('student-pick').innerHTML='<div class="empty"><div class="empty-icon">👤</div><div class="empty-text">No students under this teacher</div></div>'; return; }
+    students.forEach(s=>{
+      const b=document.createElement('button'); b.className='person-btn';
+      b.innerHTML=`<div>${s.name}</div><span>›</span>`;
+      b.onclick=()=>{sale.studentId=s.id;sale.step=3;renderSaleStep();};
+      document.getElementById('student-pick').appendChild(b);
+    });
+
+  } else if (sale.step===3) {
+    title.textContent='Scan Items';
+    btn.style.display=''; btn.textContent='Confirm →';
+    btn.onclick=()=>{if(!sale.items.length){showToast('No items scanned');return;}sale.step=4;renderSaleStep();};
+    content.innerHTML=`
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Selling to: <strong>${getBuyerName()}</strong>${sale.discount?` · <span style="color:var(--green);">20% teacher discount</span>`:''}</div>
+      <div class="scan-box">
+        <span class="scan-label">Scan barcode</span>
+        <div class="scan-row"><input type="text" id="sale-scan" placeholder="Scan item barcode..." autocomplete="off"><button class="btn btn-primary btn-sm" onclick="handleSaleScan()">Add</button></div>
+      </div>
+      <div id="sale-flash"></div>
+      <div id="sale-items"></div>
+      <div id="sale-total"></div>`;
+    document.getElementById('sale-scan').addEventListener('keydown',e=>{if(e.key==='Enter')handleSaleScan();});
+    renderSaleItems();
+
+  } else if (sale.step===4) {
+    title.textContent='Confirm Sale';
+    const total=sale.items.reduce((s,i)=>s+i.discounted,0);
+    content.innerHTML=`
+      <div class="card" style="margin-bottom:12px;">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">Selling to</div>
+        <div style="font-size:16px;font-weight:700;">${getBuyerName()}</div>
+        ${sale.discount?'<div style="font-size:12px;color:var(--green);margin-top:3px;">20% teacher discount applied</div>':''}
+      </div>
+      ${sale.items.map(i=>`
+        <div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="font-size:13px;font-weight:600;flex:1;line-height:1.35;">${i.name}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--accent);margin-left:10px;">${fmtRM(i.discounted)}</div>
+        </div>`).join('')}
+      <div class="row-between" style="padding:12px 0;font-size:18px;font-weight:800;"><span>Total</span><span style="color:var(--accent);">${fmtRM(total)}</span></div>
+      <button class="btn btn-green btn-full" onclick="confirmSale(false)">💰 Paid now</button>
+      <div style="height:8px;"></div>
+      <button class="btn btn-outline btn-full" onclick="confirmSale(true)">📋 Unpaid — generate invoice</button>`;
+  }
+}
+
+function pickBuyerType(type) {
+  sale.buyerType=type; sale.discount=type==='teacher'?0.2:0;
+  if (type==='teacher') {
+    document.getElementById('sales-content').innerHTML=`<div class="section-title" style="margin-bottom:10px;">Which teacher?</div><div id="t-direct"></div>`;
+    db.teachers.sort((a,b)=>a.name.localeCompare(b.name)).forEach(t=>{
+      const b=document.createElement('button'); b.className='person-btn';
+      b.innerHTML=`<div>${t.name}</div><span>›</span>`;
+      b.onclick=()=>{sale.teacherId=t.id;sale.studentId=t.id;sale.step=3;renderSaleStep();};
+      document.getElementById('t-direct').appendChild(b);
+    });
+  } else { sale.step=1; renderSaleStep(); }
+}
+
+function renderStaffSel() {
+  const wrap=document.getElementById('staff-sel'); if(!wrap)return;
+  wrap.innerHTML='';
+  db.staff.forEach(s=>{
+    const b=document.createElement('button'); b.className='person-btn';
+    b.style.borderColor=sale.staffId===s.id?'var(--accent)':'';
+    b.style.background=sale.staffId===s.id?'var(--accent-light)':'';
+    b.innerHTML=`<div>${s.name}</div>${sale.staffId===s.id?'<span style="color:var(--accent);">✓</span>':''}`;
+    b.onclick=()=>{sale.staffId=s.id;renderStaffSel();};
+    wrap.appendChild(b);
+  });
+}
+
+function getBuyerName() {
+  if (sale.buyerType==='teacher') { const t=db.teachers.find(t=>t.id===sale.teacherId); return t?t.name+' (Teacher)':'Teacher'; }
+  const s=db.students.find(s=>s.id===sale.studentId); return s?s.name:'Student';
+}
+
+function handleSaleScan() {
+  const input=document.getElementById('sale-scan');
+  const barcode=input.value.trim(); if(!barcode)return;
+  input.value='';
+  const item=db.items[barcode];
+  if (!item) {
+    document.getElementById('sale-flash').innerHTML=`<div class="card" style="background:var(--red-light);border-color:var(--red);font-size:13px;margin-bottom:8px;">❌ Item not in system — ask admin to add it first.</div>`;
+    setTimeout(()=>{const f=document.getElementById('sale-flash');if(f)f.innerHTML='';},3000);
+    return;
+  }
+  const orig=item.price, disc=sale.discount?+(orig*(1-sale.discount)).toFixed(2):orig;
+  sale.items.push({barcode,name:item.name,originalPrice:orig,discounted:disc});
+  renderSaleItems();
+  input.focus();
+}
+
+function renderSaleItems() {
+  const list=document.getElementById('sale-items');
+  const totalEl=document.getElementById('sale-total');
+  if (!list) return;
+  if (!sale.items.length) { list.innerHTML='<div style="font-size:13px;color:var(--muted);text-align:center;padding:20px;">No items yet</div>'; if(totalEl)totalEl.innerHTML=''; return; }
+  list.innerHTML=sale.items.map((item,idx)=>`
+    <div class="scanned-item">
+      <div class="scanned-name">${item.name}${sale.discount?`<div style="font-size:11px;color:var(--green);">${fmtRM(item.originalPrice)} → ${fmtRM(item.discounted)}</div>`:''}</div>
+      <div class="scanned-price">${fmtRM(item.discounted)}</div>
+      <button class="scanned-remove" onclick="removeSaleItem(${idx})">✕</button>
+    </div>`).join('');
+  const total=sale.items.reduce((s,i)=>s+i.discounted,0);
+  if (totalEl) totalEl.innerHTML=`<div class="sale-total-bar"><div style="font-size:13px;opacity:0.8;">${sale.items.length} item${sale.items.length>1?'s':''}</div><div><div style="font-size:12px;opacity:0.8;">Total</div><div style="font-size:24px;font-weight:800;">${fmtRM(total)}</div></div></div>`;
+}
+
+function removeSaleItem(idx) { sale.items.splice(idx,1); renderSaleItems(); }
+
+function confirmSale(unpaid) {
+  if (!sale.staffId) { showToast('Select staff member first'); sale.step=0; renderSaleStep(); return; }
+  const total=sale.items.reduce((s,i)=>s+i.discounted,0);
+  const inv={
+    id:genId(), no:nextInvNo(), date:Date.now(),
+    buyerType:sale.buyerType, buyerId:sale.studentId||sale.teacherId,
+    teacherId:sale.teacherId, staffId:sale.staffId,
+    items:sale.items.map(i=>({...i})), total,
+    discount:sale.discount, paid:unpaid?0:total,
+    payments:unpaid?[]:[{date:Date.now(),amount:total,method:'cash'}],
+    status:unpaid?'unpaid':'paid'
+  };
+  sale.items.forEach(i=>{ if(db.items[i.barcode]&&db.items[i.barcode].qty!==null) db.items[i.barcode].qty=Math.max(0,db.items[i.barcode].qty-1); });
+  db.invoices.push(inv); saveDB();
+  if (unpaid) showReceiptOverlay(inv);
+  else { showToast('Sale recorded ✓'); goHome(); }
+}
+
+// ── RECEIPT ───────────────────────────────────────────────────────────────────
+function buildReceiptHTML(inv) {
+  const buyer=getBuyerById(inv.buyerType,inv.buyerId);
+  const staff=db.staff.find(s=>s.id===inv.staffId);
+  const outstanding=inv.total-inv.paid;
+  const statusBadge=inv.status==='paid'?'<span class="badge badge-green">PAID</span>':inv.paid>0?'<span class="badge badge-orange">PARTIAL</span>':'<span class="badge badge-red">UNPAID</span>';
+  return `<div class="receipt" id="receipt-printable">
+    <div class="receipt-header"><div class="receipt-title">🎵 First Tone</div><div class="receipt-sub">${inv.no}</div><div class="receipt-sub">${fmtDT(inv.date)}</div><div class="receipt-sub">Staff: ${staff?staff.name:'-'}</div></div>
+    <hr class="receipt-divider">
+    <div class="receipt-row"><span>Customer</span><span style="font-weight:700;">${buyer}</span></div>
+    <hr class="receipt-divider">
+    ${inv.items.map(i=>`<div class="receipt-row"><span style="flex:1;padding-right:8px;min-width:0;">${i.name}</span><span style="white-space:nowrap;">${fmtRM(i.discounted)}</span></div>${inv.discount?`<div class="receipt-row" style="font-size:11px;color:var(--muted);"><span>  (orig: ${fmtRM(i.originalPrice)})</span></div>`:''}`).join('')}
+    <div class="receipt-row total"><span>Total</span><span>${fmtRM(inv.total)}</span></div>
+    ${inv.paid>0?`<div class="receipt-row" style="color:var(--green);"><span>Paid</span><span>${fmtRM(inv.paid)}</span></div>`:''}
+    ${outstanding>0?`<div class="receipt-row" style="color:var(--red);font-weight:700;"><span>Outstanding</span><span>${fmtRM(outstanding)}</span></div>`:''}
+    ${inv.payments.length>1?`<hr class="receipt-divider"><div style="font-size:11px;color:var(--muted);">Payment history:</div>${inv.payments.map(p=>`<div class="receipt-row" style="font-size:11px;"><span>${fmtDate(p.date)} ${p.method}</span><span>${fmtRM(p.amount)}</span></div>`).join('')}`:''}
+    <div class="receipt-status">${statusBadge}</div>
+  </div>`;
+}
+
+function getBuyerById(type,id) {
+  if (type==='teacher') { const t=db.teachers.find(t=>t.id===id); return t?t.name+' (Teacher)':'Teacher'; }
+  const s=db.students.find(s=>s.id===id); return s?s.name:'Student';
+}
+
+function showReceiptOverlay(inv) {
+  currentInvoiceId=inv.id;
+  document.getElementById('receipt-content').innerHTML=buildReceiptHTML(inv);
+  document.getElementById('receipt-overlay').classList.add('open');
+}
+
+function downloadReceipt() {
+  const el=document.getElementById('receipt-printable');
+  const win=window.open('','_blank');
+  win.document.write('<html><head><meta charset="UTF-8"><style>body{margin:0;background:white;font-family:Courier New,monospace;padding:16px;max-width:360px;} .receipt-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;gap:8px;} .receipt-row.total{font-weight:700;font-size:15px;border-top:1px solid #ccc;padding-top:8px;margin-top:4px;} .receipt-divider{border:none;border-top:1px dashed #ccc;margin:12px 0;} .receipt-header{text-align:center;margin-bottom:16px;} .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:10px;} .badge-green{background:#E8F5EE;color:#1E6E42;} .badge-red{background:#FBEAEA;color:#B92E2E;} .badge-orange{background:#FDF0E6;color:#C45E0A;} .receipt-status{text-align:center;} </style></head><body>'+el.outerHTML+'<script>window.onload=function(){window.print();}<\/script></body></html>');
+  win.document.close();
+}
+
+function closeReceipt() { document.getElementById('receipt-overlay').classList.remove('open'); goHome(); }
+
+// ── OUTSTANDING ───────────────────────────────────────────────────────────────
+function renderOutstanding() {
+  const now=Date.now();
+  let invs=db.invoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled'&&i.status!=='writeoff');
+  if (outstandingFilter==='unpaid') invs=invs.filter(i=>i.paid===0);
+  if (outstandingFilter==='partial') invs=invs.filter(i=>i.paid>0&&i.paid<i.total);
+  if (outstandingFilter==='overdue') invs=invs.filter(i=>now-i.date>30*24*60*60*1000);
+  invs.sort((a,b)=>b.date-a.date);
+  const list=document.getElementById('outstanding-list');
+  if (!invs.length) { list.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No outstanding invoices</div></div>'; return; }
+  list.innerHTML=invs.map(inv=>{
+    const buyer=getBuyerById(inv.buyerType,inv.buyerId);
+    const outstanding=inv.total-inv.paid;
+    const overdue=now-inv.date>30*24*60*60*1000;
+    return `<div class="card" style="cursor:pointer;margin-bottom:10px;${overdue?'border-left:3px solid var(--red);':''}" onclick="openInvoiceDetail('${inv.id}')">
+      <div class="row-between" style="margin-bottom:4px;"><div style="font-size:15px;font-weight:700;">${buyer}</div><span class="badge ${overdue?'badge-red':'badge-orange'}">${overdue?'OVERDUE':'UNPAID'}</span></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${inv.no} · ${fmtDate(inv.date)}</div>
+      <div class="row-between">
+        <div><div style="font-size:22px;font-weight:800;color:var(--red);">${fmtRM(outstanding)}</div><div style="font-size:12px;color:var(--muted);">Paid: ${fmtRM(inv.paid)}</div></div>
+        <button class="btn btn-green btn-sm" onclick="event.stopPropagation();startPayment('${inv.id}')">Pay</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── INVOICE DETAIL ────────────────────────────────────────────────────────────
+function openInvoiceDetail(id) {
+  currentInvoiceId=id;
+  const inv=db.invoices.find(i=>i.id===id); if(!inv)return;
+  document.getElementById('invoice-detail-content').innerHTML=buildReceiptHTML(inv);
+  const isPaid=inv.status==='paid';
+  const isCancelled=inv.status==='cancelled'||inv.status==='writeoff';
+  document.getElementById('inv-detail-pay-btn').style.display=isPaid||isCancelled?'none':'';
+  document.getElementById('inv-detail-cancel-btn').style.display=isCancelled?'none':'';
+  document.getElementById('inv-detail-writeoff-btn').style.display=isCancelled?'none':'';
+  document.getElementById('invoice-detail-overlay').classList.add('open');
+}
+function closeInvoiceDetail() { document.getElementById('invoice-detail-overlay').classList.remove('open'); }
+function openPayFromDetail() { closeInvoiceDetail(); startPayment(currentInvoiceId); }
+function downloadInvoiceImage() {
+  const el=document.getElementById('invoice-detail-content').querySelector('.receipt');
+  if(el){const inv=db.invoices.find(i=>i.id===currentInvoiceId);if(inv){document.getElementById('receipt-content').innerHTML=buildReceiptHTML(inv);downloadReceipt();}}
+}
+function cancelInvoice() {
+  const inv=db.invoices.find(i=>i.id===currentInvoiceId); if(!inv)return;
+  if(!confirm('Cancel invoice '+inv.no+'? Stock will be returned.'))return;
+  inv.status='cancelled';
+  inv.items.forEach(item=>{if(db.items[item.barcode]&&db.items[item.barcode].qty!==null)db.items[item.barcode].qty+=1;});
+  saveDB(); closeInvoiceDetail(); renderOutstanding(); showToast('Cancelled, stock returned');
+}
+function writeOffInvoice() {
+  const inv=db.invoices.find(i=>i.id===currentInvoiceId); if(!inv)return;
+  if(!confirm('Write off '+inv.no+'? Amount will be recorded as bad debt.'))return;
+  const buyer=getBuyerById(inv.buyerType,inv.buyerId);
+  const amount=inv.total-inv.paid;
+  db.writeoffs.push({date:Date.now(),invoiceNo:inv.no,studentName:buyer,amount,reason:'Bad debt'});
+  inv.status='writeoff';
+  saveDB(); closeInvoiceDetail(); renderOutstanding(); showToast('Written off');
+}
+
+// ── PAYMENT ───────────────────────────────────────────────────────────────────
+function startPayment(invoiceId) {
+  currentPaymentInvoiceId=invoiceId; paymentAmount=0; paymentMethod='';
+  const inv=db.invoices.find(i=>i.id===invoiceId); if(!inv)return;
+  document.getElementById('payment-invoice-info').textContent=inv.no+' · '+getBuyerById(inv.buyerType,inv.buyerId);
+  document.getElementById('payment-outstanding').textContent=fmtRM(inv.total-inv.paid);
+  document.getElementById('payment-amount-display').textContent='Tap to enter amount';
+  document.getElementById('payment-amount-display').style.color='var(--muted)';
+  document.getElementById('payment-date-display').textContent=fmtDT(Date.now());
+  document.getElementById('pay-cash-btn').className='btn btn-outline btn-sm';
+  document.getElementById('pay-transfer-btn').className='btn btn-outline btn-sm';
+  document.getElementById('payment-overlay').classList.add('open');
+}
+function openNumpadForPayment() {
+  const inv=db.invoices.find(i=>i.id===currentPaymentInvoiceId);
+  const outstanding=inv?inv.total-inv.paid:0;
+  openNumpad('Payment amount (RM)',outstanding.toFixed(0),val=>{
+    paymentAmount=parseFloat(val)||0;
+    document.getElementById('payment-amount-display').textContent=fmtRM(paymentAmount);
+    document.getElementById('payment-amount-display').style.color='var(--text)';
+  });
+}
+function selectPayMethod(m) {
+  paymentMethod=m;
+  document.getElementById('pay-cash-btn').className='btn btn-sm '+(m==='cash'?'btn-green':'btn-outline');
+  document.getElementById('pay-transfer-btn').className='btn btn-sm '+(m==='transfer'?'btn-green':'btn-outline');
+}
+function confirmPayment() {
+  if(!paymentAmount||paymentAmount<=0){showToast('Enter payment amount');return;}
+  if(!paymentMethod){showToast('Select payment method');return;}
+  const inv=db.invoices.find(i=>i.id===currentPaymentInvoiceId); if(!inv)return;
+  inv.paid=Math.min(inv.total,inv.paid+paymentAmount);
+  inv.payments.push({date:Date.now(),amount:paymentAmount,method:paymentMethod});
+  inv.status=inv.paid>=inv.total?'paid':'partial';
+  saveDB(); document.getElementById('payment-overlay').classList.remove('open');
+  renderOutstanding(); showToast('Payment recorded ✓');
+}
+
+// ── INVOICE HISTORY ───────────────────────────────────────────────────────────
+function renderInvoiceHistory() {
+  const invs=[...db.invoices].sort((a,b)=>b.date-a.date);
+  const list=document.getElementById('invoice-history-list');
+  if(!invs.length){list.innerHTML='<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No invoices yet</div></div>';return;}
+  list.innerHTML=invs.map(inv=>{
+    const sc=inv.status==='paid'?'badge-green':inv.status==='cancelled'||inv.status==='writeoff'?'badge-red':inv.paid>0?'badge-orange':'badge-red';
+    const st=inv.status==='paid'?'PAID':inv.status==='cancelled'?'CANCELLED':inv.status==='writeoff'?'WRITE-OFF':inv.paid>0?'PARTIAL':'UNPAID';
+    return `<div class="card" style="cursor:pointer;margin-bottom:8px;" onclick="openInvoiceDetail('${inv.id}')">
+      <div class="row-between" style="margin-bottom:4px;"><div style="font-size:13px;font-weight:700;color:var(--accent);">${inv.no}</div><span class="badge ${sc}">${st}</span></div>
+      <div style="font-size:13px;font-weight:600;">${getBuyerById(inv.buyerType,inv.buyerId)}</div>
+      <div style="font-size:12px;color:var(--muted);">${fmtDT(inv.date)} · ${fmtRM(inv.total)}</div>
+    </div>`;
+  }).join('');
+}
+function exportInvoiceHistory() {
+  const rows=[['Invoice No','Date','Customer','Items','Total','Paid','Outstanding','Status','Staff']];
+  db.invoices.forEach(inv=>{
+    const staff=db.staff.find(s=>s.id===inv.staffId);
+    rows.push([inv.no,fmtDT(inv.date),getBuyerById(inv.buyerType,inv.buyerId),inv.items.map(i=>i.name).join('; '),inv.total.toFixed(2),inv.paid.toFixed(2),(inv.total-inv.paid).toFixed(2),inv.status,staff?staff.name:'-']);
+  });
+  downloadCSV(rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),'FirstTone_Invoices_'+new Date().getFullYear()+'.csv');
+}
+
+// ── INVENTORY ─────────────────────────────────────────────────────────────────
+function renderInvList() {
+  const items=Object.entries(db.items);
+  const threshold=db.settings.lowStockThreshold||5;
+  let filtered=items.filter(([b,item])=>{
+    const q=listSearchQuery.toLowerCase();
+    const ms=!q||item.name.toLowerCase().includes(q)||b.toLowerCase().includes(q);
+    const mf=invFilter==='all'?true:invFilter==='books'?item.type==='book':invFilter==='stock'?item.type==='stock':invFilter==='low'?(item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0):invFilter==='zero'?item.qty===0:true;
+    return ms&&mf;
+  }).sort((a,b)=>a[1].name.localeCompare(b[1].name));
+  const totalVal=items.reduce((s,[,i])=>s+(i.qty??0)*i.price,0);
+  document.getElementById('inv-stats').innerHTML=`<div class="stat-pill"><strong>${items.length}</strong> items</div><div class="stat-pill">Value <strong>${fmtRM(totalVal)}</strong></div>`;
+  const list=document.getElementById('inv-list');
+  if(!filtered.length){list.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">No items</div></div>';return;}
+  list.innerHTML=filtered.map(([b,item])=>{
+    const isLow=item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0;
+    const isZero=item.qty===0; const isNull=item.qty===null;
+    const margin=item.cost>0?Math.round((item.price-item.cost)/item.price*100):null;
+    return `<div class="inv-item ${isZero?'zero-stock':isLow?'low-stock':isNull?'uncounted':''}" onclick="openEditItem('${esc(b)}')">
+      <div class="inv-item-info">
+        <div class="inv-item-name">${item.name}</div>
+        <div class="inv-item-code">${b} · ${item.type}${margin!==null?' · <span style="color:var(--green);">'+margin+'%</span>':''}</div>
+      </div>
+      <div class="inv-item-right">
+        <div class="inv-qty ${isNull?'null-qty':isZero?'zero':''}">${isNull?'?':item.qty}</div>
+        <div class="inv-price">${fmtRM(item.price)}</div>
+        <div class="inv-total">${isNull?'-':fmtRM((item.qty||0)*item.price)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ADD/EDIT ITEM ─────────────────────────────────────────────────────────────
+function openAddItem() { editingItemBarcode=null; openScreen('screen-additem'); }
+function openEditItem(b) { editingItemBarcode=b; openScreen('screen-additem'); }
+
+function initAddItemScreen() {
+  const editing=editingItemBarcode&&db.items[editingItemBarcode];
+  document.getElementById('additem-title').textContent=editing?'Edit Item':'Add Item';
+  document.getElementById('additem-name').style.display=editing?'none':'';
+  document.getElementById('additem-name-display').style.display=editing?'':'none';
+  if(editing){
+    const item=db.items[editingItemBarcode];
+    document.getElementById('additem-name-display').textContent=item.name;
+    document.getElementById('additem-type').value=item.type;
+    document.getElementById('additem-price').value=item.price;
+    document.getElementById('additem-cost').value=item.cost||'';
+    document.getElementById('additem-barcode-display').textContent=editingItemBarcode;
+    document.getElementById('additem-barcode-display').style.display='';
+    document.getElementById('additem-delete-wrap').style.display='';
+    additemAlertOn=item.alertOn!==false;
+  } else {
+    document.getElementById('additem-name').value='';
+    document.getElementById('additem-type').value='book';
+    document.getElementById('additem-price').value='';
+    document.getElementById('additem-cost').value='';
+    document.getElementById('additem-barcode-display').style.display='none';
+    document.getElementById('additem-barcode-display').textContent='';
+    document.getElementById('additem-delete-wrap').style.display='none';
+    document.getElementById('additem-barcode-preview').style.display='none';
+    additemAlertOn=true;
+  }
+  document.getElementById('additem-alert-toggle').className='toggle '+(additemAlertOn?'on':'');
+  document.getElementById('additem-barcode-input').style.display='none';
+  updateMargin();
+}
+
+function toggleAddAlert() { additemAlertOn=!additemAlertOn; document.getElementById('additem-alert-toggle').className='toggle '+(additemAlertOn?'on':''); }
+function updateMargin() {
+  const p=parseFloat(document.getElementById('additem-price').value)||0;
+  const c=parseFloat(document.getElementById('additem-cost').value)||0;
+  const el=document.getElementById('additem-margin');
+  if(p>0&&c>0){el.style.display='';el.textContent='Margin: '+((p-c)/p*100).toFixed(1)+'% · Markup: '+((p-c)/c*100).toFixed(1)+'%';}
+  else el.style.display='none';
+}
+
+function startScanBarcode() {
+  const inp=document.getElementById('additem-barcode-input');
+  inp.style.display=''; inp.value=''; inp.focus();
+  inp.onkeydown=e=>{if(e.key==='Enter'){const v=inp.value.trim();if(v){document.getElementById('additem-barcode-display').textContent=v;document.getElementById('additem-barcode-display').style.display='';inp.style.display='none';showBarcodePreview(v);}}};
+}
+function generateBarcode() {
+  const code='FT-'+Date.now().toString().slice(-6);
+  document.getElementById('additem-barcode-display').textContent=code;
+  document.getElementById('additem-barcode-display').style.display='';
+  showBarcodePreview(code);
+}
+function showBarcodePreview(code) {
+  const p=document.getElementById('additem-barcode-preview');
+  p.style.display='';
+  p.innerHTML=`<div style="font-family:monospace;font-size:13px;font-weight:700;">${code}</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">Print and stick on item</div>`;
+}
+
+function saveItem() {
+  const name=editingItemBarcode?db.items[editingItemBarcode]?.name:document.getElementById('additem-name').value.trim();
+  const type=document.getElementById('additem-type').value;
+  const price=parseFloat(document.getElementById('additem-price').value);
+  const cost=parseFloat(document.getElementById('additem-cost').value)||0;
+  const barcode=document.getElementById('additem-barcode-display').textContent.trim();
+  if(!name){showToast('Enter item name');return;}
+  if(!price||price<=0){showToast('Enter valid price');return;}
+  if(!barcode){showToast('Scan or generate barcode');return;}
+  db.items[barcode]={name,type,price,cost,qty:db.items[barcode]?.qty??null,alertOn:additemAlertOn,createdAt:db.items[barcode]?.createdAt||Date.now()};
+  if(editingItemBarcode&&editingItemBarcode!==barcode)delete db.items[editingItemBarcode];
+  saveDB(); editingItemBarcode=null; showToast('Saved ✓'); openScreen('screen-inventory');
+}
+function deleteItem() {
+  if(!editingItemBarcode)return;
+  if(!confirm('Delete "'+db.items[editingItemBarcode]?.name+'"?'))return;
+  delete db.items[editingItemBarcode]; saveDB(); editingItemBarcode=null; showToast('Deleted'); openScreen('screen-inventory');
+}
+
+// ── STOCK COUNT ───────────────────────────────────────────────────────────────
+function handleCountScan() {
+  const inp=document.getElementById('countBarcodeInput');
+  const b=inp.value.trim(); if(!b)return; inp.value='';
+  if (db.items[b]) {
+    const newQty=(db.items[b].qty??0)+1;
+    db.items[b].qty=newQty; saveDB();
+    showCountFlash(b,newQty); renderCountList();
+  } else {
+    document.getElementById('count-unknown').style.display='';
+    document.getElementById('count-unknown').innerHTML=`<div class="card" style="background:var(--orange-light);border-color:var(--orange);margin-bottom:12px;"><div style="font-size:13px;font-weight:600;color:var(--orange);">Unknown: ${b}</div><div style="margin-top:10px;"><button class="btn btn-primary btn-sm btn-full" onclick="editingItemBarcode=null;document.getElementById('additem-barcode-display').textContent='${esc(b)}';document.getElementById('additem-barcode-display').style.display='';openScreen('screen-additem')">Add to inventory</button></div></div>`;
+  }
+  inp.focus();
+}
+
+function showCountFlash(b,qty) {
+  const item=db.items[b];
+  document.getElementById('count-flash').innerHTML=`
+    <div class="flash-card show">
+      <div class="flash-name">✓ ${item.name}</div>
+      <div class="flash-qty-row">
+        <div><div class="flash-qty-num" id="cf-qty">${qty}</div><div class="flash-price">${fmtRM(item.price)}</div></div>
+        <div class="flash-btns">
+          <button class="flash-btn" onclick="countAdj('${esc(b)}',-1)">−</button>
+          <button class="flash-btn" style="font-size:16px;" onclick="openNumpad('${item.name.slice(0,20)}',String(db.items['${esc(b)}'].qty??0),v=>{const q=parseInt(v)||0;db.items['${esc(b)}'].qty=q;saveDB();document.getElementById('cf-qty').textContent=q;renderCountList();})">✎</button>
+          <button class="flash-btn" onclick="countAdj('${esc(b)}',1)">+</button>
+        </div>
+      </div>
+    </div>`;
+  if(countFlashTimer)clearTimeout(countFlashTimer);
+  countFlashTimer=setTimeout(()=>{document.getElementById('count-flash').innerHTML='';},3500);
+}
+
+function countAdj(b,delta) {
+  if(countFlashTimer)clearTimeout(countFlashTimer);
+  const q=Math.max(0,(db.items[b]?.qty??0)+delta);
+  if(db.items[b])db.items[b].qty=q; saveDB();
+  const el=document.getElementById('cf-qty'); if(el)el.textContent=q;
+  renderCountList();
+  countFlashTimer=setTimeout(()=>{document.getElementById('count-flash').innerHTML='';},3500);
+}
+
+function renderCountList() {
+  const counted=Object.entries(db.items).filter(([,i])=>i.qty!==null);
+  document.getElementById('count-stats').innerHTML=`<div class="stat-pill"><strong>${counted.length}</strong>/${Object.keys(db.items).length} counted</div>`;
+  document.getElementById('count-list').innerHTML=counted.sort((a,b)=>a[1].name.localeCompare(b[1].name)).map(([b,item])=>`
+    <div class="inv-item" onclick="openNumpad('${esc(item.name.slice(0,25))}',String(${item.qty??0}),v=>{const q=parseInt(v)||0;db.items['${esc(b)}'].qty=q;saveDB();renderCountList();})">
+      <div class="inv-item-info"><div class="inv-item-name">${item.name}</div></div>
+      <div class="inv-item-right"><div class="inv-qty">${item.qty}</div><div class="inv-price">${fmtRM(item.price)}</div></div>
+    </div>`).join('');
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+function renderExport() {
+  const items=Object.values(db.items);
+  const counted=items.filter(i=>i.qty!==null).length;
+  const pct=items.length?Math.round(counted/items.length*100):0;
+  document.getElementById('export-progress-bar').style.width=pct+'%';
+  document.getElementById('export-progress-label').textContent=counted+' of '+items.length+' items counted ('+pct+'%)';
+  const bv=items.filter(i=>i.type==='book'&&i.qty!==null).reduce((s,i)=>s+i.qty*i.price,0);
+  const sv=items.filter(i=>i.type==='stock'&&i.qty!==null).reduce((s,i)=>s+i.qty*i.price,0);
+  document.getElementById('export-summary').innerHTML=`
+    <div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>Books</span><span>${fmtRM(bv)}</span></div>
+    <div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>Stock/Instruments</span><span>${fmtRM(sv)}</span></div>
+    <div class="row-between" style="padding:10px 0;font-size:16px;font-weight:800;color:var(--accent);"><span>Grand Total</span><span>${fmtRM(bv+sv)}</span></div>`;
+}
+function exportToCSV() {
+  const rows=[['No.','Item','Type','Qty','Price (RM)','Total (RM)']]; let no=1;
+  Object.entries(db.items).filter(([,i])=>i.qty!==null).sort((a,b)=>a[1].name.localeCompare(b[1].name)).forEach(([,i])=>{
+    rows.push([no++,i.name,i.type==='book'?'Book':'Stock',i.qty,i.price.toFixed(2),(i.qty*i.price).toFixed(2)]);
+  });
+  downloadCSV(rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),'FirstTone_Stock_'+new Date().getFullYear()+'.csv');
+}
+function resetCount() {
+  if(!confirm('Reset all quantities? This clears the current count.'))return;
+  Object.keys(db.items).forEach(k=>{db.items[k].qty=null;}); saveDB(); renderExport(); showToast('Count reset');
+}
+
+// ── RESTOCK ───────────────────────────────────────────────────────────────────
+function renderRestock() {
+  const threshold=db.settings.lowStockThreshold||5;
+  const low=Object.entries(db.items).filter(([,i])=>i.alertOn&&i.qty!==null&&i.qty<=threshold);
+  low.forEach(([b,])=>{if(!poQtys[b])poQtys[b]=5;});
+  const list=document.getElementById('po-list');
+  if(!low.length){list.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No low stock items</div></div>';return;}
+  list.innerHTML=low.map(([b,item])=>`
+    <div class="po-item">
+      <div class="po-name"><div style="font-size:13px;font-weight:600;">${item.name}</div><div style="font-size:11px;color:var(--muted);">In stock: ${item.qty}</div></div>
+      <div class="po-qty-control">
+        <button class="po-qty-btn" onclick="adjPO('${esc(b)}',-1)">−</button>
+        <div class="po-qty-num" id="pq-${b.replace(/[^a-z0-9]/gi,'-')}">${poQtys[b]||5}</div>
+        <button class="po-qty-btn" onclick="adjPO('${esc(b)}',1)">+</button>
+      </div>
+    </div>`).join('');
+}
+function adjPO(b,d) {
+  poQtys[b]=Math.max(1,(poQtys[b]||5)+d);
+  const el=document.getElementById('pq-'+b.replace(/[^a-z0-9]/gi,'-')); if(el)el.textContent=poQtys[b];
+}
+function sendPO() {
+  const sup=db.settings.supplier;
+  if(!sup.wa){showToast('Set supplier WhatsApp in Settings');return;}
+  const threshold=db.settings.lowStockThreshold||5;
+  const low=Object.entries(db.items).filter(([,i])=>i.alertOn&&i.qty!==null&&i.qty<=threshold);
+  if(!low.length){showToast('No low stock items');return;}
+  let msg='*First Tone — Restock Order*\n'+new Date().toLocaleDateString('en-GB')+'\n\n';
+  low.forEach(([b,item])=>{msg+='• '+item.name+' × '+(poQtys[b]||5)+'\n';});
+  msg+='\nPlease confirm availability. Thank you!';
+  window.open('https://wa.me/'+sup.wa+'?text='+encodeURIComponent(msg),'_blank');
+}
+
+// ── MANAGE PEOPLE ─────────────────────────────────────────────────────────────
+function renderTeachers() {
+  document.getElementById('teachers-list').innerHTML=db.teachers.sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`
+    <div class="card" style="cursor:pointer;" onclick="openEditPerson('teacher','${t.id}')">
+      <div style="font-size:14px;font-weight:600;">${t.name}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px;">${db.students.filter(s=>s.teacherId===t.id).length} students</div>
+    </div>`).join('')||'<div class="empty"><div class="empty-text">No teachers yet</div></div>';
+}
+function renderStudents() {
+  const sorted=[...db.students].sort((a,b)=>a.name.localeCompare(b.name));
+  document.getElementById('students-list').innerHTML=sorted.map(s=>{
+    const teacher=db.teachers.find(t=>t.id===s.teacherId);
+    const out=db.invoices.filter(i=>i.buyerId===s.id&&i.status!=='paid'&&i.status!=='cancelled'&&i.status!=='writeoff').reduce((sum,i)=>sum+(i.total-i.paid),0);
+    return `<div class="card" style="cursor:pointer;" onclick="openStudentProfile('${s.id}')">
+      <div class="row-between"><div style="font-size:14px;font-weight:600;">${s.name}</div>${out>0?`<span class="badge badge-red">${fmtRM(out)}</span>`:''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px;">${teacher?teacher.name:'-'}${s.notes?' · '+s.notes:''}</div>
+    </div>`;
+  }).join('')||'<div class="empty"><div class="empty-text">No students yet</div></div>';
+}
+function renderStaffList() {
+  document.getElementById('staff-list').innerHTML=db.staff.map(s=>`
+    <div class="card" style="cursor:pointer;" onclick="openEditPerson('staff','${s.id}')">
+      <div style="font-size:14px;font-weight:600;">${s.name}</div>
+    </div>`).join('')||'<div class="empty"><div class="empty-text">No staff yet</div></div>';
+}
+
+function openStudentProfile(id) {
+  currentStudentId=id;
+  const s=db.students.find(s=>s.id===id); if(!s)return;
+  const teacher=db.teachers.find(t=>t.id===s.teacherId);
+  const invs=db.invoices.filter(i=>i.buyerId===id).sort((a,b)=>b.date-a.date);
+  const totalSpent=invs.filter(i=>i.status!=='cancelled').reduce((sum,i)=>sum+i.total,0);
+  const out=invs.filter(i=>i.status!=='paid'&&i.status!=='cancelled'&&i.status!=='writeoff').reduce((sum,i)=>sum+(i.total-i.paid),0);
+  document.getElementById('student-profile-name').textContent=s.name;
+  document.getElementById('student-profile-content').innerHTML=`
+    <div class="card" style="margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--muted);">Teacher</div><div style="font-weight:600;">${teacher?teacher.name:'-'}</div>
+      ${s.notes?`<div style="font-size:12px;color:var(--muted);margin-top:6px;">${s.notes}</div>`:''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <div class="card" style="flex:1;margin-bottom:0;"><div style="font-size:11px;color:var(--muted);">Total spent</div><div style="font-weight:800;font-size:18px;color:var(--accent);">${fmtRM(totalSpent)}</div></div>
+      <div class="card" style="flex:1;margin-bottom:0;"><div style="font-size:11px;color:var(--muted);">Outstanding</div><div style="font-weight:800;font-size:18px;color:${out>0?'var(--red)':'var(--green)'};">${fmtRM(out)}</div></div>
+    </div>
+    <div class="section-title">Purchase History</div>
+    ${!invs.length?'<div class="empty"><div class="empty-text">No purchases yet</div></div>':
+    invs.map(inv=>`<div class="card" style="cursor:pointer;margin-bottom:8px;" onclick="openInvoiceDetail('${inv.id}')">
+      <div class="row-between"><div style="font-size:13px;font-weight:700;color:var(--accent);">${inv.no}</div><span class="badge ${inv.status==='paid'?'badge-green':inv.paid>0?'badge-orange':'badge-red'}">${inv.status==='paid'?'PAID':inv.paid>0?'PARTIAL':'UNPAID'}</span></div>
+      <div style="font-size:12px;color:var(--muted);">${fmtDT(inv.date)} · ${fmtRM(inv.total)}</div>
+      <div style="font-size:12px;margin-top:4px;">${inv.items.map(i=>i.name).join(', ')}</div>
+    </div>`).join('')}`;
+  openScreen('screen-student-profile');
+}
+
+function editCurrentStudent() { if(currentStudentId) openEditPerson('student',currentStudentId); }
+
+function openAddPerson(type) { editingPersonType=type; editingPersonId=null; setupPersonOverlay(); }
+function openEditPerson(type,id) { editingPersonType=type; editingPersonId=id; setupPersonOverlay(); }
+
+function setupPersonOverlay() {
+  const type=editingPersonType, id=editingPersonId;
+  const labels={teacher:'Teacher',student:'Student',staff:'Staff'};
+  document.getElementById('addperson-title').textContent=(id?'Edit ':'Add ')+labels[type];
+  document.getElementById('addperson-name').value='';
+  document.getElementById('addperson-notes').value='';
+  document.getElementById('addperson-delete-btn').style.display=id?'':'none';
+  const tf=document.getElementById('addperson-teacher-field');
+  tf.style.display=type==='student'?'':'none';
+  if (type==='student') {
+    const sel=document.getElementById('addperson-teacher');
+    sel.innerHTML=db.teachers.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  if (id) {
+    const arr=type==='teacher'?db.teachers:type==='student'?db.students:db.staff;
+    const p=arr.find(p=>p.id===id);
+    if(p){
+      document.getElementById('addperson-name').value=p.name;
+      document.getElementById('addperson-notes').value=p.notes||'';
+      if(type==='student'&&p.teacherId)document.getElementById('addperson-teacher').value=p.teacherId;
+    }
+  }
+  document.getElementById('addperson-overlay').classList.add('open');
+}
+
+function savePerson() {
+  const name=document.getElementById('addperson-name').value.trim();
+  const notes=document.getElementById('addperson-notes').value.trim();
+  if(!name){showToast('Enter a name');return;}
+  const arr=editingPersonType==='teacher'?db.teachers:editingPersonType==='student'?db.students:db.staff;
+  if(editingPersonId){
+    const p=arr.find(p=>p.id===editingPersonId);
+    if(p){p.name=name;p.notes=notes;if(editingPersonType==='student')p.teacherId=document.getElementById('addperson-teacher').value;}
+  } else {
+    const obj={id:genId(),name,notes};
+    if(editingPersonType==='student')obj.teacherId=document.getElementById('addperson-teacher').value;
+    arr.push(obj);
+  }
+  saveDB(); document.getElementById('addperson-overlay').classList.remove('open');
+  if(editingPersonType==='teacher')renderTeachers();
+  if(editingPersonType==='student')renderStudents();
+  if(editingPersonType==='staff')renderStaffList();
+  showToast('Saved ✓');
+}
+
+function deletePerson() {
+  if(!editingPersonId)return;
+  const arr=editingPersonType==='teacher'?db.teachers:editingPersonType==='student'?db.students:db.staff;
+  const p=arr.find(p=>p.id===editingPersonId);
+  if(!confirm('Delete '+p?.name+'?'))return;
+  const idx=arr.findIndex(p=>p.id===editingPersonId); if(idx>-1)arr.splice(idx,1);
+  saveDB(); document.getElementById('addperson-overlay').classList.remove('open');
+  if(editingPersonType==='teacher')renderTeachers();
+  if(editingPersonType==='student')renderStudents();
+  if(editingPersonType==='staff')renderStaffList();
+  showToast('Deleted');
+}
+
+// ── WRITE-OFFS ────────────────────────────────────────────────────────────────
+function renderWriteoffs() {
+  const list=document.getElementById('writeoffs-list');
+  if(!db.writeoffs.length){list.innerHTML='<div class="empty"><div class="empty-icon">📝</div><div class="empty-text">No write-offs</div></div>';return;}
+  const total=db.writeoffs.reduce((s,w)=>s+w.amount,0);
+  list.innerHTML=`<div class="card" style="background:var(--red-light);border-color:var(--red);margin-bottom:14px;"><div style="font-size:12px;color:var(--muted);">Total written off</div><div style="font-size:22px;font-weight:800;color:var(--red);">${fmtRM(total)}</div></div>`+
+    db.writeoffs.sort((a,b)=>b.date-a.date).map(w=>`
+      <div class="card" style="margin-bottom:8px;">
+        <div class="row-between"><div style="font-size:13px;font-weight:600;">${w.studentName}</div><div style="font-size:14px;font-weight:800;color:var(--red);">${fmtRM(w.amount)}</div></div>
+        <div style="font-size:12px;color:var(--muted);">${w.invoiceNo} · ${fmtDate(w.date)}</div>
+      </div>`).join('');
+}
+
+// ── SUPPLIER ──────────────────────────────────────────────────────────────────
+function loadSupplierForm() {
+  const s=db.settings.supplier||{};
+  document.getElementById('supplier-name').value=s.name||'';
+  document.getElementById('supplier-wa').value=s.wa||'';
+  document.getElementById('supplier-notes').value=s.notes||'';
+}
+function saveSupplier() {
+  db.settings.supplier={name:document.getElementById('supplier-name').value.trim(),wa:document.getElementById('supplier-wa').value.trim(),notes:document.getElementById('supplier-notes').value.trim()};
+  saveDB();
+  document.getElementById('supplier-preview').textContent=db.settings.supplier.name||'Not set';
+  showToast('Saved ✓'); openScreen('screen-settings');
+}
+
+// ── PIN CHANGE ────────────────────────────────────────────────────────────────
+function openChangePIN(role) {
+  changingPINRole=role;
+  document.getElementById('change-pin-title').textContent='Change '+(role==='admin'?'Admin':'Staff')+' PIN';
+  document.getElementById('new-pin-input').value=''; document.getElementById('confirm-pin-input').value='';
+  document.getElementById('change-pin-overlay').classList.add('open');
+}
+function savePIN() {
+  const np=document.getElementById('new-pin-input').value;
+  const cp=document.getElementById('confirm-pin-input').value;
+  if(np.length!==4||!/^\d{4}$/.test(np)){showToast('PIN must be 4 digits');return;}
+  if(np!==cp){showToast('PINs do not match');return;}
+  if(changingPINRole==='admin')db.settings.adminPIN=np; else db.settings.staffPIN=np;
+  saveDB(); document.getElementById('change-pin-overlay').classList.remove('open'); showToast('PIN updated ✓');
+}
+
+// ── BACKUP/RESTORE ────────────────────────────────────────────────────────────
+function backupData() {
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));
+  a.download='FirstTone_backup_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  showToast('Backup downloaded');
+}
+function restoreData(e) {
+  const file=e.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{const d=JSON.parse(ev.target.result);if(!d.settings||!d.items){showToast('Invalid file');return;}if(!confirm('Restore? Current data will be replaced.'))return;db=d;saveDB();showToast('Restored ✓');goHome();}
+    catch{showToast('Failed to read file');}
+  };
+  reader.readAsText(file);
+}
+
+// ── NUMPAD ────────────────────────────────────────────────────────────────────
+function openNumpad(label,initial,cb) {
+  npState={val:String(initial||'0'),cb};
+  document.getElementById('numpad-label').textContent=label;
+  document.getElementById('numpad-display').textContent=npState.val;
+  document.getElementById('numpad-overlay').classList.add('open');
+}
+function nkPress(d) {
+  if(npState.val==='0')npState.val=d; else npState.val+=d;
+  if(npState.val.length>6)npState.val=npState.val.slice(0,6);
+  document.getElementById('numpad-display').textContent=npState.val;
+}
+function nkDel() { npState.val=npState.val.slice(0,-1)||'0'; document.getElementById('numpad-display').textContent=npState.val; }
+function nkConfirm() { document.getElementById('numpad-overlay').classList.remove('open'); if(npState.cb)npState.cb(npState.val); }
+function closeNumpad() { document.getElementById('numpad-overlay').classList.remove('open'); }
+
+// ── ALPHA KEYBOARD ────────────────────────────────────────────────────────────
+function openAlpha(title,filterFn,cb) {
+  alphaState={str:'',cb,filterFn,title};
+  document.getElementById('alpha-title').textContent=title;
+  document.getElementById('alpha-display').textContent='_';
+  document.getElementById('alpha-results').innerHTML=''; document.getElementById('alpha-results').style.display='none';
+  document.getElementById('alpha-keys').innerHTML='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(l=>`<button class="ak" onclick="alphaPress('${l}')">${l}</button>`).join('');
+  document.getElementById('alpha-overlay').classList.add('open');
+}
+function alphaPress(l) { alphaState.str+=l; document.getElementById('alpha-display').textContent=alphaState.str+'_'; renderAlphaResults(); }
+function alphaSpace() { alphaState.str+=' '; document.getElementById('alpha-display').textContent=alphaState.str+'_'; renderAlphaResults(); }
+function alphaDel() { alphaState.str=alphaState.str.slice(0,-1); document.getElementById('alpha-display').textContent=(alphaState.str||'')+'_'; renderAlphaResults(); }
+function closeAlpha() { document.getElementById('alpha-overlay').classList.remove('open'); }
+
+function renderAlphaResults() {
+  const q=alphaState.str.toLowerCase().trim();
+  const el=document.getElementById('alpha-results');
+  if(!q){el.style.display='none';return;}
+  const results=alphaState.filterFn?alphaState.filterFn(q):[];
+  el.style.display='block';
+  if(!results.length){el.innerHTML='<div style="padding:10px 14px;font-size:13px;color:var(--muted);">No match</div>';return;}
+  el.innerHTML=results.map(r=>`<button class="alpha-result-btn" onclick="alphaSelectCb('${esc(r.id||r.key||'')}')"><div class="alpha-result-name">${r.name}</div>${r.sub?`<div class="alpha-result-sub">${r.sub}</div>`:''}</button>`).join('');
+}
+function alphaSelectCb(id) { closeAlpha(); if(alphaState.cb)alphaState.cb(id); }
+
+function openListAlpha() {
+  openAlpha('Search inventory',q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)||b.toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:b+' · '+fmtRM(i.price)})),
+    b=>{listSearchQuery=b;const el=document.getElementById('list-search-active');el.style.display='';el.textContent='🔍 "'+db.items[b]?.name+'" — tap to clear';renderInvList();}
+  );
+}
+function clearListSearch() { listSearchQuery=''; document.getElementById('list-search-active').style.display='none'; renderInvList(); }
+
+function openStudentAlpha() {
+  openAlpha('Search student',q=>db.students.filter(s=>s.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,20).map(s=>({id:s.id,name:s.name,sub:db.teachers.find(t=>t.id===s.teacherId)?.name||''})),
+    id=>openStudentProfile(id)
+  );
+}
+
+function openRestockAlpha() {
+  openAlpha('Add incoming stock',q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:'In stock: '+(i.qty??'?')})),
+    b=>openNumpad('Qty received — '+(db.items[b]?.name?.slice(0,20)||''),'1',v=>{
+      const qty=parseInt(v)||0;
+      if(db.items[b]){db.items[b].qty=(db.items[b].qty||0)+qty;saveDB();showToast('+'+qty+' added');renderRestock();}
+    })
+  );
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadDB();
+document.getElementById('countBarcodeInput').addEventListener('keydown',e=>{if(e.key==='Enter')handleCountScan();});
+document.getElementById('supplier-preview').textContent=db.settings.supplier?.name||'Not set';
+</script>

@@ -345,9 +345,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
       <select id="additem-type"><option value="book">Book</option><option value="stock">Stock / Instrument / Accessory</option></select>
     </div>
     <div class="field">
-      <label>Category</label>
+      <label>Category (instrument)</label>
       <input type="text" id="additem-category" list="additem-category-list" placeholder="e.g. Piano, Guitar, Violin, Theory...">
       <datalist id="additem-category-list"></datalist>
+    </div>
+    <div class="field">
+      <label>Tags</label>
+      <div class="filter-row" id="additem-tags" style="flex-wrap:wrap;"></div>
+    </div>
+    <div class="field">
+      <label>Item No. (supplier order code)</label>
+      <input type="text" id="additem-itemno" placeholder="e.g. MPF-2002A">
     </div>
     <div class="field">
       <label>Selling Price (RM)</label>
@@ -662,7 +670,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwFX-kaTtWwpToN
 const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
-const APP_VERSION = 'v1'; // bumped on every change — visible in Settings > Data
+const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
+const APP_VERSION = 'v2'; // bumped on every change — visible in Settings > Data
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
 // Fire-and-forget POST to the Apps Script backend. Local state (and localStorage
@@ -688,10 +697,10 @@ function defaultDB() {
       { id:'stu3', name:'Wei Chen', teacherId:'t2', notes:'Sat 10am' }
     ],
     items: {
-      '9789670362175': { name:'Theory of Music Made Easy Grade 1', type:'book', category:'Theory', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
-      '9789670362182': { name:'Theory of Music Made Easy Grade 2', type:'book', category:'Theory', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
-      'INST-001': { name:'Ukulele (Standard)', type:'stock', category:'Ukulele', price:200, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
-      'ACC-001': { name:'Guitar Capo', type:'stock', category:'Guitar', price:24, cost:0, qty:null, alertOn:true, createdAt:Date.now() }
+      '9789670362175': { name:'Theory of Music Made Easy Grade 1', type:'book', category:'Theory', tags:['Theory'], itemNo:'', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      '9789670362182': { name:'Theory of Music Made Easy Grade 2', type:'book', category:'Theory', tags:['Theory'], itemNo:'', price:12, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      'INST-001': { name:'Ukulele (Standard)', type:'stock', category:'Ukulele', tags:[], itemNo:'', price:200, cost:0, qty:null, alertOn:true, createdAt:Date.now() },
+      'ACC-001': { name:'Guitar Capo', type:'stock', category:'Guitar', tags:[], itemNo:'', price:24, cost:0, qty:null, alertOn:true, createdAt:Date.now() }
     },
     invoices: [],
     writeoffs: []
@@ -713,6 +722,7 @@ let invFilter = 'all';
 let listSearchQuery = '';
 let countFlashTimer = null;
 let additemAlertOn = true;
+let additemTags = [];
 let changingPINRole = '';
 let poQtys = {};
 let currentStudentId = null;
@@ -1185,12 +1195,13 @@ function renderInvList() {
   const threshold=db.settings.lowStockThreshold||5;
   let filtered=items.filter(([b,item])=>{
     const q=listSearchQuery.toLowerCase();
-    const ms=!q||item.name.toLowerCase().includes(q)||b.toLowerCase().includes(q);
-    const mf=invFilter==='all'?true:invFilter==='books'?item.type==='book':invFilter==='stock'?item.type==='stock':invFilter==='low'?(item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0):invFilter==='zero'?item.qty===0:invFilter.startsWith('cat:')?item.category===invFilter.slice(4):true;
+    const ms=!q||item.name.toLowerCase().includes(q)||b.toLowerCase().includes(q)||(item.tags||[]).some(t=>t.toLowerCase().includes(q));
+    const mf=invFilter==='all'?true:invFilter==='books'?item.type==='book':invFilter==='stock'?item.type==='stock':invFilter==='low'?(item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0):invFilter==='zero'?item.qty===0:invFilter.startsWith('cat:')?item.category===invFilter.slice(4):invFilter.startsWith('tag:')?(item.tags||[]).includes(invFilter.slice(4)):invFilter==='pending'?b.startsWith('PENDING-'):true;
     return ms&&mf;
   }).sort((a,b)=>a[1].name.localeCompare(b[1].name));
   const totalVal=items.reduce((s,[,i])=>s+(i.qty??0)*i.price,0);
-  document.getElementById('inv-stats').innerHTML=`<div class="stat-pill"><strong>${items.length}</strong> items</div><div class="stat-pill">Value <strong>${fmtRM(totalVal)}</strong></div>`;
+  const pendingCount=items.filter(([b])=>b.startsWith('PENDING-')).length;
+  document.getElementById('inv-stats').innerHTML=`<div class="stat-pill"><strong>${items.length}</strong> items</div><div class="stat-pill">Value <strong>${fmtRM(totalVal)}</strong></div>${pendingCount?`<div class="stat-pill" style="color:var(--orange);cursor:pointer;" onclick="selectInvChip(this,'pending')"><strong>${pendingCount}</strong> need barcode</div>`:''}`;
   renderCategoryChips();
   const list=document.getElementById('inv-list');
   if(!filtered.length){list.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">No items</div></div>';return;}
@@ -1198,10 +1209,11 @@ function renderInvList() {
     const isLow=item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0;
     const isZero=item.qty===0; const isNull=item.qty===null;
     const margin=item.cost>0?Math.round((item.price-item.cost)/item.price*100):null;
+    const isPending=b.startsWith('PENDING-');
     return `<div class="inv-item ${isZero?'zero-stock':isLow?'low-stock':isNull?'uncounted':''}" onclick="openEditItem('${esc(b)}')">
       <div class="inv-item-info">
-        <div class="inv-item-name">${item.name}</div>
-        <div class="inv-item-code">${b} · ${item.type}${item.category?' · '+item.category:''}${margin!==null?' · <span style="color:var(--green);">'+margin+'%</span>':''}</div>
+        <div class="inv-item-name">${item.name}${isPending?' <span class="badge badge-orange">NEED BARCODE</span>':''}</div>
+        <div class="inv-item-code">${isPending?'no barcode yet':b} · ${item.type}${item.category?' · '+item.category:''}${(item.tags&&item.tags.length)?' · '+item.tags.join(', '):''}${margin!==null?' · <span style="color:var(--green);">'+margin+'%</span>':''}</div>
       </div>
       <div class="inv-item-right">
         <div class="inv-qty ${isNull?'null-qty':isZero?'zero':''}">${isNull?'?':item.qty}</div>
@@ -1239,16 +1251,19 @@ function initAddItemScreen() {
     document.getElementById('additem-name-display').textContent=item.name;
     document.getElementById('additem-type').value=item.type;
     document.getElementById('additem-category').value=item.category||'';
+    document.getElementById('additem-itemno').value=item.itemNo||'';
     document.getElementById('additem-price').value=item.price;
     document.getElementById('additem-cost').value=item.cost||'';
     document.getElementById('additem-barcode-display').textContent=editingItemBarcode;
     document.getElementById('additem-barcode-display').style.display='';
     document.getElementById('additem-delete-wrap').style.display='';
     additemAlertOn=item.alertOn!==false;
+    additemTags=[...(item.tags||[])];
   } else {
     document.getElementById('additem-name').value='';
     document.getElementById('additem-type').value='book';
     document.getElementById('additem-category').value='';
+    document.getElementById('additem-itemno').value='';
     document.getElementById('additem-price').value='';
     document.getElementById('additem-cost').value='';
     document.getElementById('additem-barcode-display').style.display='none';
@@ -1256,10 +1271,12 @@ function initAddItemScreen() {
     document.getElementById('additem-delete-wrap').style.display='none';
     document.getElementById('additem-barcode-preview').style.display='none';
     additemAlertOn=true;
+    additemTags=[];
   }
   document.getElementById('additem-alert-toggle').className='toggle '+(additemAlertOn?'on':'');
   document.getElementById('additem-barcode-input').style.display='none';
   populateCategoryDatalist();
+  renderTagChips();
   updateMargin();
 }
 
@@ -1267,6 +1284,17 @@ function populateCategoryDatalist() {
   const used=Object.values(db.items).map(i=>i.category).filter(Boolean);
   const cats=[...new Set([...CATEGORY_PRESETS,...used])].sort();
   document.getElementById('additem-category-list').innerHTML=cats.map(c=>`<option value="${c}">`).join('');
+}
+
+function renderTagChips() {
+  const used=Object.values(db.items).flatMap(i=>i.tags||[]);
+  const tags=[...new Set([...TAG_PRESETS,...used])];
+  document.getElementById('additem-tags').innerHTML=tags.map(t=>`<div class="chip${additemTags.includes(t)?' active':''}" onclick="toggleAddTag('${esc(t)}')">${t}</div>`).join('');
+}
+function toggleAddTag(tag) {
+  const i=additemTags.indexOf(tag);
+  if(i>-1) additemTags.splice(i,1); else additemTags.push(tag);
+  renderTagChips();
 }
 
 function toggleAddAlert() { additemAlertOn=!additemAlertOn; document.getElementById('additem-alert-toggle').className='toggle '+(additemAlertOn?'on':''); }
@@ -1299,6 +1327,7 @@ function saveItem() {
   const name=editingItemBarcode?db.items[editingItemBarcode]?.name:document.getElementById('additem-name').value.trim();
   const type=document.getElementById('additem-type').value;
   const category=document.getElementById('additem-category').value.trim();
+  const itemNo=document.getElementById('additem-itemno').value.trim();
   const price=parseFloat(document.getElementById('additem-price').value);
   const cost=parseFloat(document.getElementById('additem-cost').value)||0;
   const barcode=document.getElementById('additem-barcode-display').textContent.trim();
@@ -1306,7 +1335,7 @@ function saveItem() {
   if(!price||price<=0){showToast('Enter valid price');return;}
   if(!barcode){showToast('Scan or generate barcode');return;}
   const oldBarcode=(editingItemBarcode&&editingItemBarcode!==barcode)?editingItemBarcode:undefined;
-  db.items[barcode]={name,type,category,price,cost,qty:db.items[barcode]?.qty??null,alertOn:additemAlertOn,createdAt:db.items[barcode]?.createdAt||Date.now()};
+  db.items[barcode]={name,type,category,tags:[...additemTags],itemNo,price,cost,qty:db.items[barcode]?.qty??null,alertOn:additemAlertOn,createdAt:db.items[barcode]?.createdAt||Date.now()};
   if(oldBarcode)delete db.items[oldBarcode];
   saveDB();
   syncAction('saveItem',{...db.items[barcode],barcode,oldBarcode});
@@ -1332,9 +1361,29 @@ function handleCountScan() {
     showCountFlash(b,newQty); renderCountList();
   } else {
     document.getElementById('count-unknown').style.display='';
-    document.getElementById('count-unknown').innerHTML=`<div class="card" style="background:var(--orange-light);border-color:var(--orange);margin-bottom:12px;"><div style="font-size:13px;font-weight:600;color:var(--orange);">Unknown: ${b}</div><div style="margin-top:10px;"><button class="btn btn-primary btn-sm btn-full" onclick="editingItemBarcode=null;document.getElementById('additem-barcode-display').textContent='${esc(b)}';document.getElementById('additem-barcode-display').style.display='';openScreen('screen-additem')">Add to inventory</button></div></div>`;
+    document.getElementById('count-unknown').innerHTML=`<div class="card" style="background:var(--orange-light);border-color:var(--orange);margin-bottom:12px;"><div style="font-size:13px;font-weight:600;color:var(--orange);">Unknown: ${b}</div><div style="margin-top:10px;display:flex;gap:8px;"><button class="btn btn-outline btn-sm" style="flex:1;" onclick="openMatchBarcode('${esc(b)}')">🔗 Match book</button><button class="btn btn-primary btn-sm" style="flex:1;" onclick="editingItemBarcode=null;document.getElementById('additem-barcode-display').textContent='${esc(b)}';document.getElementById('additem-barcode-display').style.display='';openScreen('screen-additem')">+ New item</button></div></div>`;
   }
   inp.focus();
+}
+
+function openMatchBarcode(scanned) {
+  openAlpha('Match "'+scanned+'" to a book',
+    q=>Object.entries(db.items).filter(([b,i])=>b.startsWith('PENDING-')&&(i.name.toLowerCase().includes(q)||(i.itemNo||'').toLowerCase().includes(q))).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)})),
+    oldBarcode=>assignScannedBarcode(oldBarcode,scanned)
+  );
+}
+function assignScannedBarcode(oldBarcode,newBarcode) {
+  if (db.items[newBarcode]) { showToast('That barcode is already in use'); return; }
+  const item=db.items[oldBarcode]; if(!item) return;
+  item.qty=(item.qty??0)+1;
+  db.items[newBarcode]=item;
+  delete db.items[oldBarcode];
+  saveDB();
+  syncAction('saveItem',{...item,barcode:newBarcode,oldBarcode});
+  document.getElementById('count-unknown').style.display='none';
+  document.getElementById('count-unknown').innerHTML='';
+  showCountFlash(newBarcode,item.qty); renderCountList();
+  showToast('Linked ✓');
 }
 
 function showCountFlash(b,qty) {

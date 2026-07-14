@@ -9,9 +9,10 @@
  *  4. Deploy > New deployment > Web app > Execute as Me / Access: Anyone.
  *  5. Copy the Web app URL into APPS_SCRIPT_URL in FirstTone_App.html and set USE_LOCAL = false.
  *
- * Updating an existing deployment (schema changed, e.g. added the "category" column):
+ * Updating an existing deployment (schema changed — new columns added):
  *  1. Paste the new code over the old Code.gs (Ctrl+A, paste, Ctrl+S).
- *  2. Run migrateAddCategoryColumn() once to add the new column without wiping data.
+ *  2. Run migrateAddCategoryColumn() once, then migrateAddItemNoAndTagsColumns() once.
+ *     Both are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
  *     (This keeps the same Web app URL — no need to update FirstTone_App.html.)
@@ -34,7 +35,7 @@ const SHEET_HEADERS = {
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
   Students: ['id', 'name', 'teacherId', 'notes'],
-  Items: ['barcode', 'name', 'type', 'category', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
+  Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted'],
   Payments: ['invoiceId', 'date', 'amount', 'method'],
@@ -64,6 +65,7 @@ function doPost(e) {
       case 'saveInvoice': result = saveInvoice(payload); break;
       case 'updatePayment': result = updatePayment(payload); break;
       case 'saveItem': result = saveItem(payload); break;
+      case 'bulkImportItems': result = bulkImportItems(payload); break;
       case 'updateQty': result = updateQty(payload); break;
       case 'savePerson': result = savePerson(payload); break;
       case 'writeoff': result = writeoffInvoice(payload); break;
@@ -171,6 +173,8 @@ function getAllData() {
       name: r.name,
       type: r.type,
       category: r.category || '',
+      itemNo: r.itemNo || '',
+      tags: r.tags ? String(r.tags).split(',').map(t => t.trim()).filter(Boolean) : [],
       price: Number(r.price) || 0,
       cost: Number(r.cost) || 0,
       qty: (r.qty === '' || r.qty === null || r.qty === undefined) ? null : Number(r.qty),
@@ -283,7 +287,8 @@ function saveItem(payload) {
     }
 
     const rowArr = [
-      payload.barcode, payload.name, payload.type, payload.category || '', payload.price, payload.cost || 0,
+      payload.barcode, payload.name, payload.type, payload.category || '', payload.itemNo || '',
+      (payload.tags || []).join(','), payload.price, payload.cost || 0,
       (payload.qty === null || payload.qty === undefined) ? '' : payload.qty,
       !!payload.alertOn, payload.createdAt || Date.now()
     ];
@@ -291,6 +296,28 @@ function saveItem(payload) {
     if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
     return { ok: true };
+  });
+}
+
+// Writes many item rows in one batched operation — much faster than calling
+// saveItem() once per item. Skips barcodes that already exist (safe to re-run
+// a partial/interrupted import without creating duplicates).
+function bulkImportItems(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.ITEMS);
+    const existing = new Set(sheetToObjects(SHEET_NAMES.ITEMS).map(r => String(r.barcode)));
+    const rows = (payload.items || [])
+      .filter(it => !existing.has(String(it.barcode)))
+      .map(it => [
+        it.barcode, it.name, it.type || 'book', it.category || '', it.itemNo || '',
+        (it.tags || []).join(','), it.price || 0, it.cost || 0,
+        (it.qty === null || it.qty === undefined) ? '' : it.qty,
+        it.alertOn !== false, it.createdAt || Date.now()
+      ]);
+    if (rows.length) {
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+    return { inserted: rows.length, skipped: (payload.items || []).length - rows.length };
   });
 }
 
@@ -380,10 +407,10 @@ function setupSpreadsheet() {
   sheet('Students').appendRow(['stu1', 'Ahmad Bin Ali', 't1', 'Mon 3pm']);
   sheet('Students').appendRow(['stu2', 'Siti Binti Hassan', 't1', '']);
   sheet('Students').appendRow(['stu3', 'Wei Chen', 't2', 'Sat 10am']);
-  sheet('Items').appendRow(['9789670362175', 'Theory of Music Made Easy Grade 1', 'book', 'Theory', 12, 0, '', true, Date.now()]);
-  sheet('Items').appendRow(['9789670362182', 'Theory of Music Made Easy Grade 2', 'book', 'Theory', 12, 0, '', true, Date.now()]);
-  sheet('Items').appendRow(['INST-001', 'Ukulele (Standard)', 'stock', 'Ukulele', 200, 0, '', true, Date.now()]);
-  sheet('Items').appendRow(['ACC-001', 'Guitar Capo', 'stock', 'Guitar', 24, 0, '', true, Date.now()]);
+  sheet('Items').appendRow(['9789670362175', 'Theory of Music Made Easy Grade 1', 'book', 'Theory', '', 'Theory', 12, 0, '', true, Date.now()]);
+  sheet('Items').appendRow(['9789670362182', 'Theory of Music Made Easy Grade 2', 'book', 'Theory', '', 'Theory', 12, 0, '', true, Date.now()]);
+  sheet('Items').appendRow(['INST-001', 'Ukulele (Standard)', 'stock', 'Ukulele', '', '', 200, 0, '', true, Date.now()]);
+  sheet('Items').appendRow(['ACC-001', 'Guitar Capo', 'stock', 'Guitar', '', '', 24, 0, '', true, Date.now()]);
 
   SpreadsheetApp.flush();
   Logger.log('Setup complete — sheets created and seeded.');
@@ -409,4 +436,25 @@ function migrateAddCategoryColumn() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — category column added to Items.');
+}
+
+function migrateAddItemNoAndTagsColumns() {
+  const sh = sheet(SHEET_NAMES.ITEMS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  ['itemNo', 'tags'].forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) {
+      Logger.log(colName + ' column already exists — skipping.');
+      return;
+    }
+    const categoryCol = freshHeaders.indexOf('category'); // 0-based
+    const afterCol = categoryCol > -1 ? categoryCol : freshHeaders.length - 1;
+    const insertAt = afterCol + 2; // 1-based column right after 'category' (or at the end)
+    sh.insertColumnAfter(afterCol + 1);
+    sh.getRange(1, insertAt).setValue(colName);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — itemNo/tags columns added to Items.');
 }

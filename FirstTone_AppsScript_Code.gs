@@ -440,21 +440,43 @@ function migrateAddCategoryColumn() {
 
 function migrateAddItemNoAndTagsColumns() {
   const sh = sheet(SHEET_NAMES.ITEMS);
-  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  let afterColName = 'category';
   ['itemNo', 'tags'].forEach(colName => {
     const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
     if (freshHeaders.indexOf(colName) > -1) {
       Logger.log(colName + ' column already exists — skipping.');
+      afterColName = colName; // keep chain order correct even when skipping
       return;
     }
-    const categoryCol = freshHeaders.indexOf('category'); // 0-based
-    const afterCol = categoryCol > -1 ? categoryCol : freshHeaders.length - 1;
-    const insertAt = afterCol + 2; // 1-based column right after 'category' (or at the end)
+    const afterIdx = freshHeaders.indexOf(afterColName); // 0-based
+    const afterCol = afterIdx > -1 ? afterIdx : freshHeaders.length - 1;
+    const insertAt = afterCol + 2; // 1-based column right after afterColName (or at the end)
     sh.insertColumnAfter(afterCol + 1);
     sh.getRange(1, insertAt).setValue(colName);
     const lastRow = sh.getLastRow();
     if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+    afterColName = colName; // next column chains after this one, preserving order
   });
   SpreadsheetApp.flush();
   Logger.log('Migration complete — itemNo/tags columns added to Items.');
+}
+
+// One-off repair for deployments that already ran the buggy version of
+// migrateAddItemNoAndTagsColumns() above, which inserted the columns in
+// reversed order (tags before itemNo) while the rest of the code always
+// wrote values assuming itemNo comes first. The data in those two columns
+// is fine — it just needs correct header labels. Safe to re-run.
+function fixItemNoTagsColumnOrder() {
+  const sh = sheet(SHEET_NAMES.ITEMS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const tagsCol = headers.indexOf('tags');
+  const itemNoCol = headers.indexOf('itemNo');
+  if (tagsCol > -1 && itemNoCol > -1 && tagsCol < itemNoCol) {
+    sh.getRange(1, tagsCol + 1).setValue('itemNo');
+    sh.getRange(1, itemNoCol + 1).setValue('tags');
+    SpreadsheetApp.flush();
+    Logger.log('Fixed — itemNo/tags headers were swapped, now corrected.');
+  } else {
+    Logger.log('Columns already in correct order — nothing to do.');
+  }
 }

@@ -4,18 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>First Tone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #F5F4F0; --surface: #FFFFFF; --surface2: #F0EEE8;
-  --border: #E0DDD5; --text: #1C1A17; --muted: #8A8378;
-  --accent: #1B4F72; --accent-light: #EAF1F8;
-  --green: #1E6E42; --green-light: #E8F5EE;
-  --red: #B92E2E; --red-light: #FBEAEA;
-  --orange: #C45E0A; --orange-light: #FDF0E6;
-  --radius: 10px; --radius-lg: 16px;
+  --bg: #F6F4EF; --surface: #FFFFFF; --surface2: #EFEBE2;
+  --border: #E2DDD1; --text: #1C1A16; --muted: #8B8474;
+  --accent: #1D3F63; --accent2: #2E6094; --accent-light: #E7EEF5;
+  --green: #1E6B44; --green-light: #E6F3EC;
+  --red: #AD3434; --red-light: #FAEAEA;
+  --orange: #BC6208; --orange-light: #FBEDDD;
+  --radius: 14px; --radius-lg: 20px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.4; }
+body { font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.4; }
 .screen { display: none; min-height: 100vh; flex-direction: column; max-width: 640px; margin: 0 auto; background: var(--bg); }
 .screen.active { display: flex; }
 .topbar { background: var(--accent); color: white; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 50; }
@@ -168,9 +170,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 /* On phones this is a no-op (viewport is already <640px). On tablet/desktop,
    cap the app to a phone-like column instead of letting buttons/text stretch
    across the whole window with huge dead margins on either side. */
-@media (min-width: 640px) {
+@media (min-width: 660px) {
   body { background: #DEDACF; }
-  .screen { box-shadow: 0 0 0 1px var(--border), 0 24px 60px rgba(28,26,23,0.14); }
+  .screen { box-shadow: 0 0 0 1px var(--border), 0 30px 70px rgba(28,26,22,0.16); border-radius: 22px; overflow: hidden; margin-top: 24px; margin-bottom: 24px; min-height: calc(100vh - 48px); }
   .content { padding: 20px 22px; }
   .home-grid { grid-template-columns: repeat(3, 1fr); }
   .pin-pad, .pin-role-select { max-width: 320px; }
@@ -237,6 +239,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
       <div style="font-size:13px;color:var(--muted);" id="home-greeting">Good morning</div>
       <div style="font-size:18px;font-weight:700;margin-top:2px;" id="home-role-display">Staff</div>
     </div>
+    <div class="stats-row" id="home-stats" style="display:none;"></div>
     <div class="home-grid" id="home-grid"></div>
   </div>
 </div>
@@ -377,7 +380,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
       <label>Barcode / ISBN</label>
       <div id="additem-barcode-display" style="padding:11px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--muted);word-break:break-all;display:none;margin-bottom:8px;"></div>
       <div style="display:flex;gap:8px;" id="additem-barcode-btns">
-        <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="startScanBarcode()">📷 Scan</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="startScanBarcode()">🔢 Enter manually</button>
         <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="generateBarcode()">🔢 Generate</button>
       </div>
       <input type="text" id="additem-barcode-input" placeholder="Scan barcode now..." style="display:none;margin-top:8px;">
@@ -671,7 +674,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v2'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v3'; // bumped on every change — visible in Settings > Data
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
 // Fire-and-forget POST to the Apps Script backend. Local state (and localStorage
@@ -839,6 +842,16 @@ function loginSuccess() {
   document.getElementById('home-greeting').textContent=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
   document.getElementById('home-role-display').textContent=currentRole==='admin'?'👑 Admin':'🛒 Staff';
   renderHomeGrid();
+  renderHomeStats();
+}
+function renderHomeStats() {
+  const el=document.getElementById('home-stats');
+  if (currentRole!=='admin') { el.style.display='none'; return; }
+  const todayStart=new Date(); todayStart.setHours(0,0,0,0);
+  const todaySales=db.invoices.filter(i=>i.date>=todayStart.getTime()&&i.status!=='cancelled').reduce((s,i)=>s+i.total,0);
+  const outstandingCount=db.invoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled'&&i.status!=='writeoff').length;
+  el.style.display='';
+  el.innerHTML=`<div class="stat-pill">Today's sales <strong>${fmtRM(todaySales)}</strong></div><div class="stat-pill">Outstanding <strong>${outstandingCount}</strong></div>`;
 }
 function logout() { currentRole=''; pinBuf=''; updateDots(); backToRoleSelect(); openScreen('screen-pin'); }
 

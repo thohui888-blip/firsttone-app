@@ -678,7 +678,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v6'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v7'; // bumped on every change — visible in Settings > Data
 const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
@@ -1415,21 +1415,32 @@ function handleCountScan() {
 
 function openMatchBarcode(scanned) {
   openAlpha('Match "'+scanned+'" to a book',
-    q=>Object.entries(db.items).filter(([b,i])=>b.startsWith('PENDING-')&&(i.name.toLowerCase().includes(q)||(i.itemNo||'').toLowerCase().includes(q))).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)})),
+    q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)||(i.itemNo||'').toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)+(b.startsWith('PENDING-')?'':' · already has a barcode')})),
     oldBarcode=>assignScannedBarcode(oldBarcode,scanned)
   );
 }
 function assignScannedBarcode(oldBarcode,newBarcode) {
-  if (db.items[newBarcode]) { showToast('That barcode is already in use'); return; }
   const item=db.items[oldBarcode]; if(!item) return;
-  item.qty=(item.qty??0)+1;
-  db.items[newBarcode]=item;
-  delete db.items[oldBarcode];
-  saveDB();
-  syncAction('saveItem',{...item,barcode:newBarcode,oldBarcode});
+  let finalBarcode=oldBarcode;
+  if (oldBarcode.startsWith('PENDING-')) {
+    // not yet matched to a real barcode — move it onto the one just scanned
+    if (db.items[newBarcode]) { showToast('That barcode is already in use'); return; }
+    item.qty=(item.qty??0)+1;
+    db.items[newBarcode]=item;
+    delete db.items[oldBarcode];
+    finalBarcode=newBarcode;
+    saveDB();
+    syncAction('saveItem',{...item,barcode:newBarcode,oldBarcode});
+  } else {
+    // already has a real barcode (e.g. a second physical copy with a
+    // different code) — just add to its count, don't touch its barcode
+    item.qty=(item.qty??0)+1;
+    saveDB();
+    syncAction('updateQty',{barcode:oldBarcode,qty:item.qty});
+  }
   document.getElementById('count-unknown').style.display='none';
   document.getElementById('count-unknown').innerHTML='';
-  showCountFlash(newBarcode,item.qty); renderCountList();
+  showCountFlash(finalBarcode,item.qty); renderCountList();
   showToast('Linked ✓');
 }
 

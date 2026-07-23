@@ -369,6 +369,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
       <input type="number" id="additem-cost" placeholder="0.00" step="0.01" min="0" oninput="updateMargin()">
       <div id="additem-margin" style="font-size:12px;color:var(--green);margin-top:6px;display:none;"></div>
     </div>
+    <div class="field" id="additem-qty-field" style="display:none;">
+      <label>Quantity in stock</label>
+      <input type="number" id="additem-qty" placeholder="Not counted yet" step="1" min="0">
+    </div>
     <div class="field">
       <label>Low Stock Alert</label>
       <div style="display:flex;align-items:center;gap:10px;">
@@ -674,7 +678,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v5'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v6'; // bumped on every change — visible in Settings > Data
 const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
@@ -1294,6 +1298,8 @@ function initAddItemScreen() {
     document.getElementById('additem-barcode-display').textContent=editingItemBarcode;
     document.getElementById('additem-barcode-display').style.display='';
     document.getElementById('additem-delete-wrap').style.display='';
+    document.getElementById('additem-qty-field').style.display='';
+    document.getElementById('additem-qty').value=(item.qty===null||item.qty===undefined)?'':item.qty;
     additemAlertOn=item.alertOn!==false;
     additemTags=[...(item.tags||[])];
   } else {
@@ -1307,6 +1313,8 @@ function initAddItemScreen() {
     document.getElementById('additem-barcode-display').textContent='';
     document.getElementById('additem-delete-wrap').style.display='none';
     document.getElementById('additem-barcode-preview').style.display='none';
+    document.getElementById('additem-qty-field').style.display='none';
+    document.getElementById('additem-qty').value='';
     additemAlertOn=true;
     additemTags=[];
   }
@@ -1368,11 +1376,13 @@ function saveItem() {
   const price=parseFloat(document.getElementById('additem-price').value);
   const cost=parseFloat(document.getElementById('additem-cost').value)||0;
   const barcode=document.getElementById('additem-barcode-display').textContent.trim();
+  const qtyRaw=document.getElementById('additem-qty').value;
+  const qty=qtyRaw===''?null:parseInt(qtyRaw);
   if(!name){showToast('Enter item name');return;}
   if(!price||price<=0){showToast('Enter valid price');return;}
   if(!barcode){showToast('Scan or generate barcode');return;}
   const oldBarcode=(editingItemBarcode&&editingItemBarcode!==barcode)?editingItemBarcode:undefined;
-  db.items[barcode]={name,type,category,tags:[...additemTags],itemNo,price,cost,qty:db.items[barcode]?.qty??null,alertOn:additemAlertOn,createdAt:db.items[barcode]?.createdAt||Date.now()};
+  db.items[barcode]={name,type,category,tags:[...additemTags],itemNo,price,cost,qty,alertOn:additemAlertOn,createdAt:db.items[barcode]?.createdAt||Date.now()};
   if(oldBarcode)delete db.items[oldBarcode];
   saveDB();
   syncAction('saveItem',{...db.items[barcode],barcode,oldBarcode});

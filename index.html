@@ -674,23 +674,41 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v4'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v5'; // bumped on every change — visible in Settings > Data
+const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
-// Fire-and-forget POST to the Apps Script backend. Local state (and localStorage
-// cache) has already been updated by the caller, so a failure here just gets
-// logged — it doesn't block the UI.
+// Every sync is persisted to a localStorage queue BEFORE it's sent, and only
+// removed once the server confirms success. If a refresh/close/lost-connection
+// interrupts the network request, the entry survives in localStorage and gets
+// retried the next time the app loads (see loadDB) — so nothing is silently
+// dropped, regardless of browser/unload timing quirks (sendBeacon turned out
+// to be unreliable for this on iOS Safari).
+function getSyncQueue() {
+  try { return JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY)) || []; } catch (e) { return []; }
+}
+function setSyncQueue(q) { localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q)); }
+function removeSyncEntry(id) { setSyncQueue(getSyncQueue().filter(e => e.id !== id)); }
+
 function syncAction(action, payload) {
   if (USE_LOCAL || !APPS_SCRIPT_URL) return;
-  const body = JSON.stringify({ action, payload });
-  // sendBeacon guarantees the request is still sent even if the page is
-  // refreshed/closed right after this call — a plain fetch() would get
-  // cancelled mid-flight by the navigation, silently dropping the sync.
-  if (navigator.sendBeacon && navigator.sendBeacon(APPS_SCRIPT_URL, body)) return;
-  fetch(APPS_SCRIPT_URL, { method: 'POST', body })
+  const entry = { id: genId(), action, payload };
+  setSyncQueue([...getSyncQueue(), entry]);
+  sendSyncEntry(entry);
+}
+function sendSyncEntry(entry) {
+  return fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: entry.action, payload: entry.payload }) })
     .then(r => r.json())
-    .then(res => { if (!res.success) console.error('Sync failed:', action, res.error); })
-    .catch(err => console.error('Sync error:', action, err));
+    .then(res => {
+      if (res.success) removeSyncEntry(entry.id);
+      else console.error('Sync failed:', entry.action, res.error);
+    })
+    .catch(err => console.error('Sync error (will retry on next load):', entry.action, err));
+}
+function flushSyncQueue() {
+  const q = getSyncQueue();
+  if (!q.length) return Promise.resolve();
+  return Promise.all(q.map(sendSyncEntry));
 }
 
 // ── DEFAULT DB ────────────────────────────────────────────────────────────────
@@ -748,6 +766,7 @@ let alphaState = { str:'', cb:null, filterFn:null, title:'' };
 async function loadDB() {
   if (!USE_LOCAL && APPS_SCRIPT_URL) {
     try {
+      await flushSyncQueue(); // retry anything left over from an interrupted session before pulling fresh cloud data
       const res = await fetch(APPS_SCRIPT_URL + '?action=getAll');
       const json = await res.json();
       if (!json.success) throw new Error(json.error||'getAll failed');

@@ -170,10 +170,10 @@ function getAllData() {
   const items = {};
   itemRows.forEach(r => {
     items[String(r.barcode)] = {
-      name: r.name,
+      name: String(r.name || ''),
       type: r.type,
-      category: r.category || '',
-      itemNo: r.itemNo || '',
+      category: String(r.category || ''),
+      itemNo: r.itemNo === '' || r.itemNo === null || r.itemNo === undefined ? '' : String(r.itemNo),
       tags: r.tags ? String(r.tags).split(',').map(t => t.trim()).filter(Boolean) : [],
       price: Number(r.price) || 0,
       cost: Number(r.cost) || 0,

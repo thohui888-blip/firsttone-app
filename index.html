@@ -678,7 +678,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v7'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v8'; // bumped on every change — visible in Settings > Data
 const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
@@ -1236,7 +1236,7 @@ function renderInvList() {
   const threshold=db.settings.lowStockThreshold||5;
   let filtered=items.filter(([b,item])=>{
     const q=listSearchQuery.toLowerCase();
-    const ms=!q||item.name.toLowerCase().includes(q)||b.toLowerCase().includes(q)||(item.tags||[]).some(t=>t.toLowerCase().includes(q));
+    const ms=!q||String(item.name||'').toLowerCase().includes(q)||b.toLowerCase().includes(q)||(item.tags||[]).some(t=>String(t||'').toLowerCase().includes(q));
     const mf=invFilter==='all'?true:invFilter==='books'?item.type==='book':invFilter==='stock'?item.type==='stock':invFilter==='low'?(item.qty!==null&&item.qty<=threshold&&item.alertOn&&item.qty>0):invFilter==='zero'?item.qty===0:invFilter.startsWith('cat:')?item.category===invFilter.slice(4):invFilter.startsWith('tag:')?(item.tags||[]).includes(invFilter.slice(4)):invFilter==='pending'?b.startsWith('PENDING-'):true;
     return ms&&mf;
   }).sort((a,b)=>a[1].name.localeCompare(b[1].name));
@@ -1415,7 +1415,7 @@ function handleCountScan() {
 
 function openMatchBarcode(scanned) {
   openAlpha('Match "'+scanned+'" to a book',
-    q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)||(i.itemNo||'').toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)+(b.startsWith('PENDING-')?'':' · already has a barcode')})),
+    q=>Object.entries(db.items).filter(([b,i])=>String(i.name||'').toLowerCase().includes(q)||String(i.itemNo||'').toLowerCase().includes(q)).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name))).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)+(b.startsWith('PENDING-')?'':' · already has a barcode')})),
     oldBarcode=>assignScannedBarcode(oldBarcode,scanned)
   );
 }
@@ -1770,20 +1770,20 @@ function renderAlphaResults() {
 function alphaSelectCb(id) { closeAlpha(); if(alphaState.cb)alphaState.cb(id); }
 
 function openListAlpha() {
-  openAlpha('Search inventory',q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)||b.toLowerCase().includes(q)||(i.category||'').toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+b+' · '+fmtRM(i.price)})),
+  openAlpha('Search inventory',q=>Object.entries(db.items).filter(([b,i])=>String(i.name||'').toLowerCase().includes(q)||b.toLowerCase().includes(q)||String(i.category||'').toLowerCase().includes(q)).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name))).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+b+' · '+fmtRM(i.price)})),
     b=>{listSearchQuery=b;const el=document.getElementById('list-search-active');el.style.display='';el.textContent='🔍 "'+db.items[b]?.name+'" — tap to clear';renderInvList();}
   );
 }
 function clearListSearch() { listSearchQuery=''; document.getElementById('list-search-active').style.display='none'; renderInvList(); }
 
 function openStudentAlpha() {
-  openAlpha('Search student',q=>db.students.filter(s=>s.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,20).map(s=>({id:s.id,name:s.name,sub:db.teachers.find(t=>t.id===s.teacherId)?.name||''})),
+  openAlpha('Search student',q=>db.students.filter(s=>String(s.name||'').toLowerCase().includes(q)).sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,20).map(s=>({id:s.id,name:s.name,sub:db.teachers.find(t=>t.id===s.teacherId)?.name||''})),
     id=>openStudentProfile(id)
   );
 }
 
 function openRestockAlpha() {
-  openAlpha('Add incoming stock',q=>Object.entries(db.items).filter(([b,i])=>i.name.toLowerCase().includes(q)).sort((a,b)=>a[1].name.localeCompare(b[1].name)).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:'In stock: '+(i.qty??'?')})),
+  openAlpha('Add incoming stock',q=>Object.entries(db.items).filter(([b,i])=>String(i.name||'').toLowerCase().includes(q)).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name))).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:'In stock: '+(i.qty??'?')})),
     b=>openNumpad('Qty received — '+(db.items[b]?.name?.slice(0,20)||''),'1',v=>{
       const qty=parseInt(v)||0;
       if(db.items[b]){db.items[b].qty=(db.items[b].qty||0)+qty;saveDB();syncAction('updateQty',{barcode:b,qty:db.items[b].qty});showToast('+'+qty+' added');renderRestock();}

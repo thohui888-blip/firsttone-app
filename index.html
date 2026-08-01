@@ -64,18 +64,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .nk.del { background: var(--surface2); }
 .nk.confirm { background: var(--green); color: white; }
 .nk.cancel-k { background: var(--surface2); }
-.alpha-display { background: var(--accent); color: white; border-radius: 10px; padding: 12px 14px; font-size: 20px; font-weight: 700; text-align: center; min-height: 48px; margin-bottom: 10px; letter-spacing: 1px; word-break: break-all; }
-.alpha-results { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; display: none; }
+.alpha-input { width: 100%; background: var(--accent); color: white; border: none; border-radius: 10px; padding: 12px 14px; font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 10px; letter-spacing: 1px; outline: none; font-family: inherit; }
+.alpha-input::placeholder { color: rgba(255,255,255,0.6); font-weight: 500; letter-spacing: normal; }
+.alpha-results { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; display: none; }
 .alpha-result-btn { width: 100%; text-align: left; padding: 11px 14px; border: none; border-bottom: 1px solid var(--border); cursor: pointer; background: white; display: block; }
 .alpha-result-btn:last-child { border-bottom: none; }
 .alpha-result-btn:active { background: var(--bg); }
 .alpha-result-name { font-size: 13px; font-weight: 600; line-height: 1.35; }
 .alpha-result-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.alpha-keys { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
-.ak { min-width: 36px; height: 38px; border-radius: 7px; font-size: 14px; font-weight: 700; background: var(--bg); border: 1.5px solid var(--border); color: var(--text); cursor: pointer; flex-shrink: 0; padding: 0 4px; }
-.ak:active { background: var(--border); }
-.alpha-btns { display: flex; gap: 6px; }
-.alpha-btns button { flex: 1; height: 44px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: var(--surface2); color: var(--text); }
 #screen-pin { background: var(--accent); align-items: center; justify-content: center; padding: 40px 24px; }
 .pin-logo { font-size: 48px; margin-bottom: 16px; }
 .pin-title { color: white; font-size: 22px; font-weight: 800; margin-bottom: 4px; }
@@ -568,19 +564,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
   </div>
 </div>
 
-<!-- Alpha keyboard -->
+<!-- Search overlay -->
 <div class="overlay" id="alpha-overlay">
   <div class="overlay-box">
     <div class="overlay-handle"></div>
     <div style="font-size:13px;font-weight:600;color:var(--muted);text-align:center;margin-bottom:8px;" id="alpha-title">Search</div>
-    <div class="alpha-display" id="alpha-display">_</div>
+    <input type="text" id="alpha-input" class="alpha-input" placeholder="Type to search..." autocomplete="off">
     <div class="alpha-results" id="alpha-results"></div>
-    <div class="alpha-keys" id="alpha-keys"></div>
-    <div class="alpha-btns">
-      <button onclick="alphaDel()">⌫</button>
-      <button style="flex:2;" onclick="alphaSpace()">Space</button>
-      <button onclick="closeAlpha()">✕</button>
-    </div>
+    <button class="btn btn-outline btn-full btn-sm" onclick="closeAlpha()">✕ Close</button>
   </div>
 </div>
 
@@ -678,7 +669,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v9'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v10'; // bumped on every change — visible in Settings > Data
 const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
@@ -1756,18 +1747,17 @@ function nkDel() { npState.val=npState.val.slice(0,-1)||'0'; document.getElement
 function nkConfirm() { document.getElementById('numpad-overlay').classList.remove('open'); if(npState.cb)npState.cb(npState.val); }
 function closeNumpad() { document.getElementById('numpad-overlay').classList.remove('open'); }
 
-// ── ALPHA KEYBOARD ────────────────────────────────────────────────────────────
+// ── SEARCH OVERLAY ────────────────────────────────────────────────────────────
 function openAlpha(title,filterFn,cb) {
   alphaState={str:'',cb,filterFn,title};
   document.getElementById('alpha-title').textContent=title;
-  document.getElementById('alpha-display').textContent='_';
+  const inp=document.getElementById('alpha-input');
+  inp.value='';
+  inp.oninput=()=>{alphaState.str=inp.value; renderAlphaResults();};
   document.getElementById('alpha-results').innerHTML=''; document.getElementById('alpha-results').style.display='none';
-  document.getElementById('alpha-keys').innerHTML='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(l=>`<button class="ak" onclick="alphaPress('${l}')">${l}</button>`).join('');
   document.getElementById('alpha-overlay').classList.add('open');
+  setTimeout(()=>inp.focus(),50);
 }
-function alphaPress(l) { alphaState.str+=l; document.getElementById('alpha-display').textContent=alphaState.str+'_'; renderAlphaResults(); }
-function alphaSpace() { alphaState.str+=' '; document.getElementById('alpha-display').textContent=alphaState.str+'_'; renderAlphaResults(); }
-function alphaDel() { alphaState.str=alphaState.str.slice(0,-1); document.getElementById('alpha-display').textContent=(alphaState.str||'')+'_'; renderAlphaResults(); }
 function closeAlpha() { document.getElementById('alpha-overlay').classList.remove('open'); }
 
 function renderAlphaResults() {

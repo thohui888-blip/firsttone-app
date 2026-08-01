@@ -678,7 +678,7 @@ const USE_LOCAL = false;
 const DB_KEY = 'firsttone_v2';
 const CATEGORY_PRESETS = ['Piano','Guitar','Violin','Ukulele','Cello','Theory','Accessories'];
 const TAG_PRESETS = ['Theory','Practical','Kids','Adult'];
-const APP_VERSION = 'v8'; // bumped on every change — visible in Settings > Data
+const APP_VERSION = 'v9'; // bumped on every change — visible in Settings > Data
 const SYNC_QUEUE_KEY = 'firsttone_sync_queue';
 
 // ── CLOUD SYNC ────────────────────────────────────────────────────────────────
@@ -953,6 +953,7 @@ function renderSaleStep() {
       <div class="scan-box">
         <span class="scan-label">Scan barcode</span>
         <div class="scan-row"><input type="text" id="sale-scan" placeholder="Scan item barcode..." autocomplete="off"><button class="btn btn-primary btn-sm" onclick="handleSaleScan()">Add</button></div>
+        <button class="btn btn-ghost btn-sm btn-full" style="margin-top:8px;" onclick="openSaleSearch()">🔍 Search book by name</button>
       </div>
       <div id="sale-flash"></div>
       <div id="sale-items"></div>
@@ -1016,6 +1017,11 @@ function handleSaleScan() {
   const input=document.getElementById('sale-scan');
   const barcode=input.value.trim(); if(!barcode)return;
   input.value='';
+  addItemToSale(barcode);
+  input.focus();
+}
+
+function addItemToSale(barcode) {
   const item=db.items[barcode];
   if (!item) {
     document.getElementById('sale-flash').innerHTML=`<div class="card" style="background:var(--red-light);border-color:var(--red);font-size:13px;margin-bottom:8px;">❌ Item not in system — ask admin to add it first.</div>`;
@@ -1025,7 +1031,13 @@ function handleSaleScan() {
   const orig=item.price, disc=sale.discount?+(orig*(1-sale.discount)).toFixed(2):orig;
   sale.items.push({barcode,name:item.name,originalPrice:orig,discounted:disc});
   renderSaleItems();
-  input.focus();
+}
+
+function openSaleSearch() {
+  openAlpha('Search book to add',
+    q=>Object.entries(db.items).filter(([b,i])=>String(i.name||'').toLowerCase().includes(q)||String(i.category||'').toLowerCase().includes(q)).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name))).slice(0,20).map(([b,i])=>({id:b,name:i.name,sub:(i.category?i.category+' · ':'')+fmtRM(i.price)})),
+    barcode=>addItemToSale(barcode)
+  );
 }
 
 function renderSaleItems() {

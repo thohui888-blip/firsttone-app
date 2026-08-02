@@ -11,8 +11,10 @@
  *
  * Updating an existing deployment (schema changed — new columns added):
  *  1. Paste the new code over the old Code.gs (Ctrl+A, paste, Ctrl+S).
- *  2. Run migrateAddCategoryColumn() once, then migrateAddItemNoAndTagsColumns() once.
- *     Both are safe to re-run (no-op if the column already exists) and do NOT wipe data.
+ *  2. Run any new migrateXxx() functions listed in this version's release notes once each
+ *     (e.g. migrateAddCategoryColumn, migrateAddItemNoAndTagsColumns, migrateAddInvoiceItemTypeMonth,
+ *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields).
+ *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
  *     (This keeps the same Web app URL — no need to update FirstTone_App.html.)
@@ -34,7 +36,7 @@ const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
-  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
@@ -164,7 +166,13 @@ function getAllData() {
   const teachers = sheetToObjects(SHEET_NAMES.TEACHERS).map(r => ({ id: String(r.id), name: r.name, notes: r.notes || '' }));
   const students = sheetToObjects(SHEET_NAMES.STUDENTS).map(r => ({
     id: String(r.id), name: r.name, teacherId: r.teacherId ? String(r.teacherId) : '', notes: r.notes || '',
-    monthlyFee: Number(r.monthlyFee) || 0
+    monthlyFee: Number(r.monthlyFee) || 0,
+    ageGroup: r.ageGroup || 'child',
+    instrument: r.instrument || '',
+    grade: r.grade || '',
+    icNumber: r.icNumber || '',
+    feeOverride: r.feeOverride === true || r.feeOverride === 'TRUE',
+    examRecords: (function () { try { return r.examRecords ? JSON.parse(r.examRecords) : []; } catch (e) { return []; } })()
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -361,7 +369,9 @@ function savePerson(payload) {
     const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     let rowArr;
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || ''];
-    else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0];
+    else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
+      payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
+      JSON.stringify(payload.examRecords || [])];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
@@ -512,4 +522,20 @@ function migrateAddStudentMonthlyFee() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(0);
   SpreadsheetApp.flush();
   Logger.log('Migration complete — monthlyFee column added to Students.');
+}
+
+function migrateAddStudentCourseFields() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const defaults = { ageGroup: 'child', instrument: '', grade: '', icNumber: '', feeOverride: true, examRecords: '[]' };
+  Object.keys(defaults).forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) { Logger.log(colName + ' column already exists — skipping.'); return; }
+    const insertAt = sh.getLastColumn() + 1;
+    sh.getRange(1, insertAt).setValue(colName);
+    const lastRow = sh.getLastRow();
+    // existing students get feeOverride=true so their current manual monthlyFee is never silently recalculated
+    if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(defaults[colName]);
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — ageGroup/instrument/grade/icNumber/feeOverride/examRecords columns added to Students.');
 }

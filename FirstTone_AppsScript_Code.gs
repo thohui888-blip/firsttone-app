@@ -13,7 +13,8 @@
  *  1. Paste the new code over the old Code.gs (Ctrl+A, paste, Ctrl+S).
  *  2. Run any new migrateXxx() functions listed in this version's release notes once each
  *     (e.g. migrateAddCategoryColumn, migrateAddItemNoAndTagsColumns, migrateAddInvoiceItemTypeMonth,
- *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields).
+ *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields, migrateAddSettingsHolidays,
+ *     migrateAddAttendanceSheet, migrateAddStudentLessonDay).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -29,19 +30,21 @@ const SHEET_NAMES = {
   INVOICES: 'Invoices',
   INVOICE_ITEMS: 'InvoiceItems',
   PAYMENTS: 'Payments',
-  WRITEOFFS: 'Writeoffs'
+  WRITEOFFS: 'Writeoffs',
+  ATTENDANCE: 'Attendance'
 };
 
 const SHEET_HEADERS = {
-  Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes'],
+  Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
-  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
   Payments: ['invoiceId', 'date', 'amount', 'method'],
-  Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason']
+  Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
+  Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -70,6 +73,7 @@ function doPost(e) {
       case 'bulkImportItems': result = bulkImportItems(payload); break;
       case 'updateQty': result = updateQty(payload); break;
       case 'savePerson': result = savePerson(payload); break;
+      case 'saveAttendance': result = saveAttendance(payload); break;
       case 'writeoff': result = writeoffInvoice(payload); break;
       case 'cancelInvoice': result = cancelInvoiceBackend(payload); break;
       case 'saveSettings': result = saveSettings(payload); break;
@@ -159,7 +163,8 @@ function getAllData() {
     staffPIN: s.staffPIN !== undefined && s.staffPIN !== '' ? String(s.staffPIN) : '1234',
     adminPIN: s.adminPIN !== undefined && s.adminPIN !== '' ? String(s.adminPIN) : '9999',
     lowStockThreshold: Number(s.lowStockThreshold || 5),
-    supplier: { name: s.supplierName || '', wa: s.supplierWA || '', notes: s.supplierNotes || '' }
+    supplier: { name: s.supplierName || '', wa: s.supplierWA || '', notes: s.supplierNotes || '' },
+    holidays: (function () { try { return s.holidays ? JSON.parse(s.holidays) : []; } catch (e) { return []; } })()
   };
 
   const staff = sheetToObjects(SHEET_NAMES.STAFF).map(r => ({ id: String(r.id), name: r.name }));
@@ -172,7 +177,8 @@ function getAllData() {
     grade: r.grade || '',
     icNumber: r.icNumber || '',
     feeOverride: r.feeOverride === true || r.feeOverride === 'TRUE',
-    examRecords: (function () { try { return r.examRecords ? JSON.parse(r.examRecords) : []; } catch (e) { return []; } })()
+    examRecords: (function () { try { return r.examRecords ? JSON.parse(r.examRecords) : []; } catch (e) { return []; } })(),
+    lessonDay: r.lessonDay || ''
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -225,7 +231,12 @@ function getAllData() {
     amount: Number(r.amount) || 0, reason: r.reason || ''
   }));
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs };
+  const attendance = sheetToObjects(SHEET_NAMES.ATTENDANCE).map(r => ({
+    id: String(r.id), studentId: String(r.studentId), date: r.date, status: r.status,
+    leaveBy: r.leaveBy || '', makeupDate: r.makeupDate || '', note: r.note || ''
+  }));
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -371,13 +382,27 @@ function savePerson(payload) {
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || ''];
     else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
-      JSON.stringify(payload.examRecords || [])];
+      JSON.stringify(payload.examRecords || []), payload.lessonDay || ''];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
     if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
     return { ok: true, id };
+  });
+}
+
+function saveAttendance(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.ATTENDANCE);
+    const headers = SHEET_HEADERS.Attendance;
+    const idCol = headers.indexOf('id');
+    const rowArr = [payload.id, payload.studentId, payload.date, payload.status,
+      payload.leaveBy || '', payload.makeupDate || '', payload.note || ''];
+    const foundRow = findRowIndexByKey(sh, idCol, payload.id);
+    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
+    else sh.appendRow(rowArr);
+    return { ok: true };
   });
 }
 
@@ -538,4 +563,37 @@ function migrateAddStudentCourseFields() {
   });
   SpreadsheetApp.flush();
   Logger.log('Migration complete — ageGroup/instrument/grade/icNumber/feeOverride/examRecords columns added to Students.');
+}
+
+function migrateAddSettingsHolidays() {
+  const sh = sheet(SHEET_NAMES.SETTINGS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('holidays') > -1) { Logger.log('holidays column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('holidays');
+  if (sh.getLastRow() > 1) sh.getRange(2, insertAt).setValue('[]');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — holidays column added to Settings.');
+}
+
+function migrateAddAttendanceSheet() {
+  const spreadsheet = ss();
+  let sh = spreadsheet.getSheetByName(SHEET_NAMES.ATTENDANCE);
+  if (sh) { Logger.log('Attendance sheet already exists — nothing to do.'); return; }
+  sh = spreadsheet.insertSheet(SHEET_NAMES.ATTENDANCE);
+  sh.getRange(1, 1, 1, SHEET_HEADERS.Attendance.length).setValues([SHEET_HEADERS.Attendance]);
+  sh.setFrozenRows(1);
+  Logger.log('Migration complete — Attendance sheet created.');
+}
+
+function migrateAddStudentLessonDay() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('lessonDay') > -1) { Logger.log('lessonDay column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('lessonDay');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — lessonDay column added to Students.');
 }

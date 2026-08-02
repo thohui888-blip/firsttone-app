@@ -34,10 +34,10 @@ const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
-  Students: ['id', 'name', 'teacherId', 'notes'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
-  InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted'],
+  InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason']
 };
@@ -163,7 +163,8 @@ function getAllData() {
   const staff = sheetToObjects(SHEET_NAMES.STAFF).map(r => ({ id: String(r.id), name: r.name }));
   const teachers = sheetToObjects(SHEET_NAMES.TEACHERS).map(r => ({ id: String(r.id), name: r.name, notes: r.notes || '' }));
   const students = sheetToObjects(SHEET_NAMES.STUDENTS).map(r => ({
-    id: String(r.id), name: r.name, teacherId: r.teacherId ? String(r.teacherId) : '', notes: r.notes || ''
+    id: String(r.id), name: r.name, teacherId: r.teacherId ? String(r.teacherId) : '', notes: r.notes || '',
+    monthlyFee: Number(r.monthlyFee) || 0
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -202,7 +203,8 @@ function getAllData() {
       status: r.status,
       items: invItemRows.filter(ii => String(ii.invoiceId) === id).map(ii => ({
         barcode: String(ii.barcode), name: ii.name,
-        originalPrice: Number(ii.originalPrice) || 0, discounted: Number(ii.discounted) || 0
+        originalPrice: Number(ii.originalPrice) || 0, discounted: Number(ii.discounted) || 0,
+        type: ii.type || 'book', month: ii.month || ''
       })),
       payments: paymentRows.filter(p => String(p.invoiceId) === id).map(p => ({
         date: Number(p.date), amount: Number(p.amount) || 0, method: p.method
@@ -227,7 +229,7 @@ function saveInvoice(inv) {
       inv.teacherId || '', inv.staffId, inv.total, inv.discount || 0, inv.paid || 0, inv.status
     ]);
     const itemSh = sheet(SHEET_NAMES.INVOICE_ITEMS);
-    (inv.items || []).forEach(it => appendRow(itemSh, [inv.id, it.barcode, it.name, it.originalPrice, it.discounted]));
+    (inv.items || []).forEach(it => appendRow(itemSh, [inv.id, it.barcode, it.name, it.originalPrice, it.discounted, it.type || 'book', it.month || '']));
     if (inv.payments && inv.payments.length) {
       const paySh = sheet(SHEET_NAMES.PAYMENTS);
       inv.payments.forEach(p => appendRow(paySh, [inv.id, p.date, p.amount, p.method]));
@@ -359,7 +361,7 @@ function savePerson(payload) {
     const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     let rowArr;
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || ''];
-    else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || ''];
+    else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
@@ -479,4 +481,35 @@ function fixItemNoTagsColumnOrder() {
   } else {
     Logger.log('Columns already in correct order — nothing to do.');
   }
+}
+
+function migrateAddInvoiceItemTypeMonth() {
+  const sh = sheet(SHEET_NAMES.INVOICE_ITEMS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  let nextCol = headers.length;
+  ['type', 'month'].forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) { Logger.log(colName + ' column already exists — skipping.'); return; }
+    nextCol = sh.getLastColumn() + 1;
+    sh.getRange(1, nextCol).setValue(colName);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.getRange(2, nextCol, lastRow - 1, 1).setValue(colName === 'type' ? 'book' : '');
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — type/month columns added to InvoiceItems.');
+}
+
+function migrateAddStudentMonthlyFee() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('monthlyFee') > -1) {
+    Logger.log('monthlyFee column already exists — nothing to do.');
+    return;
+  }
+  const insertAt = headers.length + 1; // append at the end
+  sh.getRange(1, insertAt).setValue('monthlyFee');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(0);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — monthlyFee column added to Students.');
 }

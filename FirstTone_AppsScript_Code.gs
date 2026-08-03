@@ -14,7 +14,7 @@
  *  2. Run any new migrateXxx() functions listed in this version's release notes once each
  *     (e.g. migrateAddCategoryColumn, migrateAddItemNoAndTagsColumns, migrateAddInvoiceItemTypeMonth,
  *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields, migrateAddSettingsHolidays,
- *     migrateAddAttendanceSheet, migrateAddStudentLessonDay).
+ *     migrateAddAttendanceSheet, migrateAddStudentLessonDay, migrateAddStudentMonthStatus).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -38,7 +38,7 @@ const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
-  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
@@ -178,7 +178,8 @@ function getAllData() {
     icNumber: r.icNumber || '',
     feeOverride: r.feeOverride === true || r.feeOverride === 'TRUE',
     examRecords: (function () { try { return r.examRecords ? JSON.parse(r.examRecords) : []; } catch (e) { return []; } })(),
-    lessonDay: r.lessonDay || ''
+    lessonDay: r.lessonDay || '',
+    monthStatus: (function () { try { return r.monthStatus ? JSON.parse(r.monthStatus) : {}; } catch (e) { return {}; } })()
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -382,7 +383,7 @@ function savePerson(payload) {
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || ''];
     else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
-      JSON.stringify(payload.examRecords || []), payload.lessonDay || ''];
+      JSON.stringify(payload.examRecords || []), payload.lessonDay || '', JSON.stringify(payload.monthStatus || {})];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
@@ -574,6 +575,18 @@ function migrateAddSettingsHolidays() {
   if (sh.getLastRow() > 1) sh.getRange(2, insertAt).setValue('[]');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — holidays column added to Settings.');
+}
+
+function migrateAddStudentMonthStatus() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('monthStatus') > -1) { Logger.log('monthStatus column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('monthStatus');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('{}');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — monthStatus column added to Students.');
 }
 
 function migrateAddAttendanceSheet() {

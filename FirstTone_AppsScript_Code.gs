@@ -16,7 +16,7 @@
  *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields, migrateAddSettingsHolidays,
  *     migrateAddAttendanceSheet, migrateAddStudentLessonDay, migrateAddStudentMonthStatus,
  *     migrateAddStudentLessonTime, migrateAddStudentDurationFields, migrateAddAttendanceSlotFields,
- *     migrateAddAttendanceSlotTeacherId).
+ *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -89,6 +89,16 @@ function doPost(e) {
 
 function jsonOut(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Google Sheets auto-detects things like "16:45" as a Time value, so Apps Script
+// hands it back as a JS Date instead of the string we wrote. Coerce it back to "HH:MM".
+function timeCellToString(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return String(v.getHours()).padStart(2, '0') + ':' + String(v.getMinutes()).padStart(2, '0');
+  }
+  return String(v);
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -182,7 +192,7 @@ function getAllData() {
     examRecords: (function () { try { return r.examRecords ? JSON.parse(r.examRecords) : []; } catch (e) { return []; } })(),
     lessonDay: r.lessonDay || '',
     monthStatus: (function () { try { return r.monthStatus ? JSON.parse(r.monthStatus) : {}; } catch (e) { return {}; } })(),
-    lessonTime: r.lessonTime || '',
+    lessonTime: timeCellToString(r.lessonTime),
     lessonDuration: Number(r.lessonDuration) || 0,
     durationOverride: r.durationOverride === true || r.durationOverride === 'TRUE'
   }));
@@ -240,7 +250,7 @@ function getAllData() {
   const attendance = sheetToObjects(SHEET_NAMES.ATTENDANCE).map(r => ({
     id: String(r.id), studentId: String(r.studentId), date: r.date, status: r.status,
     leaveBy: r.leaveBy || '', makeupDate: r.makeupDate || '', note: r.note || '',
-    slotTime: r.slotTime || '', slotDuration: Number(r.slotDuration) || 0,
+    slotTime: timeCellToString(r.slotTime), slotDuration: Number(r.slotDuration) || 0,
     slotTeacherId: r.slotTeacherId ? String(r.slotTeacherId) : ''
   }));
 
@@ -395,8 +405,14 @@ function savePerson(payload) {
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
-    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
-    else sh.appendRow(rowArr);
+    let targetRow;
+    if (foundRow > -1) { sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]); targetRow = foundRow; }
+    else { sh.appendRow(rowArr); targetRow = sh.getLastRow(); }
+    // Force plain-text format so Sheets doesn't auto-convert "16:45" into a Time value on this or the next save.
+    if (payload.type === 'student') {
+      const lessonTimeCol = headers.indexOf('lessonTime');
+      if (lessonTimeCol > -1) sh.getRange(targetRow, lessonTimeCol + 1).setNumberFormat('@').setValue(payload.lessonTime || '');
+    }
     return { ok: true, id };
   });
 }
@@ -410,8 +426,11 @@ function saveAttendance(payload) {
       payload.leaveBy || '', payload.makeupDate || '', payload.note || '',
       payload.slotTime || '', payload.slotDuration || 0, payload.slotTeacherId || ''];
     const foundRow = findRowIndexByKey(sh, idCol, payload.id);
-    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
-    else sh.appendRow(rowArr);
+    let targetRow;
+    if (foundRow > -1) { sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]); targetRow = foundRow; }
+    else { sh.appendRow(rowArr); targetRow = sh.getLastRow(); }
+    const slotTimeCol = headers.indexOf('slotTime');
+    if (slotTimeCol > -1) sh.getRange(targetRow, slotTimeCol + 1).setNumberFormat('@').setValue(payload.slotTime || '');
     return { ok: true };
   });
 }
@@ -638,6 +657,35 @@ function migrateAddAttendanceSlotFields() {
   });
   SpreadsheetApp.flush();
   Logger.log('Migration complete — slotTime/slotDuration columns added to Attendance.');
+}
+
+function migrateFixLessonTimeFormat() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const col = headers.indexOf('lessonTime');
+  if (col === -1) { Logger.log('lessonTime column not found — nothing to do.'); return; }
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('No student rows to fix.'); return; }
+  const range = sh.getRange(2, col + 1, lastRow - 1, 1);
+  const fixed = range.getValues().map(row => [timeCellToString(row[0])]);
+  range.setNumberFormat('@').setValues(fixed);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — lessonTime column normalized to plain-text HH:mm and locked to Plain Text format.');
+}
+
+function migrateFixSlotTimeFormat() {
+  const sh = sheet(SHEET_NAMES.ATTENDANCE);
+  if (!sh) { Logger.log('Attendance sheet not found — nothing to do.'); return; }
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const col = headers.indexOf('slotTime');
+  if (col === -1) { Logger.log('slotTime column not found — nothing to do.'); return; }
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('No attendance rows to fix.'); return; }
+  const range = sh.getRange(2, col + 1, lastRow - 1, 1);
+  const fixed = range.getValues().map(row => [timeCellToString(row[0])]);
+  range.setNumberFormat('@').setValues(fixed);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — slotTime column normalized to plain-text HH:mm and locked to Plain Text format.');
 }
 
 function migrateAddAttendanceSlotTeacherId() {

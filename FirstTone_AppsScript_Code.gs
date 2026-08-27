@@ -17,7 +17,7 @@
  *     migrateAddAttendanceSheet, migrateAddStudentLessonDay, migrateAddStudentMonthStatus,
  *     migrateAddStudentLessonTime, migrateAddStudentDurationFields, migrateAddAttendanceSlotFields,
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
- *     migrateFixInvoiceItemMonthFormat).
+ *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -108,6 +108,15 @@ function monthCellToString(v) {
   if (v === '' || v === null || v === undefined) return '';
   if (Object.prototype.toString.call(v) === '[object Date]') {
     return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0');
+  }
+  return String(v);
+}
+
+// Same problem again but for full "YYYY-MM-DD" dates (Attendance.date, Attendance.makeupDate).
+function dateCellToString(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
   }
   return String(v);
 }
@@ -259,8 +268,8 @@ function getAllData() {
   }));
 
   const attendance = sheetToObjects(SHEET_NAMES.ATTENDANCE).map(r => ({
-    id: String(r.id), studentId: String(r.studentId), date: r.date, status: r.status,
-    leaveBy: r.leaveBy || '', makeupDate: r.makeupDate || '', note: r.note || '',
+    id: String(r.id), studentId: String(r.studentId), date: dateCellToString(r.date), status: r.status,
+    leaveBy: r.leaveBy || '', makeupDate: dateCellToString(r.makeupDate), note: r.note || '',
     slotTime: timeCellToString(r.slotTime), slotDuration: Number(r.slotDuration) || 0,
     slotTeacherId: r.slotTeacherId ? String(r.slotTeacherId) : ''
   }));
@@ -448,6 +457,11 @@ function saveAttendance(payload) {
     else { sh.appendRow(rowArr); targetRow = sh.getLastRow(); }
     const slotTimeCol = headers.indexOf('slotTime');
     if (slotTimeCol > -1) sh.getRange(targetRow, slotTimeCol + 1).setNumberFormat('@').setValue(payload.slotTime || '');
+    // Force plain-text on 'date' and 'makeupDate' too — same auto-conversion risk as slotTime.
+    const dateCol = headers.indexOf('date');
+    if (dateCol > -1) sh.getRange(targetRow, dateCol + 1).setNumberFormat('@').setValue(payload.date || '');
+    const makeupDateCol = headers.indexOf('makeupDate');
+    if (makeupDateCol > -1) sh.getRange(targetRow, makeupDateCol + 1).setNumberFormat('@').setValue(payload.makeupDate || '');
     return { ok: true };
   });
 }
@@ -688,6 +702,23 @@ function migrateFixLessonTimeFormat() {
   range.setNumberFormat('@').setValues(fixed);
   SpreadsheetApp.flush();
   Logger.log('Migration complete — lessonTime column normalized to plain-text HH:mm and locked to Plain Text format.');
+}
+
+function migrateFixAttendanceDateFormat() {
+  const sh = sheet(SHEET_NAMES.ATTENDANCE);
+  if (!sh) { Logger.log('Attendance sheet not found — nothing to do.'); return; }
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('No attendance rows to fix.'); return; }
+  ['date', 'makeupDate'].forEach(colName => {
+    const col = headers.indexOf(colName);
+    if (col === -1) { Logger.log(colName + ' column not found — skipping.'); return; }
+    const range = sh.getRange(2, col + 1, lastRow - 1, 1);
+    const fixed = range.getValues().map(row => [dateCellToString(row[0])]);
+    range.setNumberFormat('@').setValues(fixed);
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — Attendance date/makeupDate columns normalized to plain-text YYYY-MM-DD and locked to Plain Text format.');
 }
 
 function migrateFixInvoiceItemMonthFormat() {

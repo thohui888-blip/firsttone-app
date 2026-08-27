@@ -16,7 +16,8 @@
  *     migrateAddStudentMonthlyFee, migrateAddStudentCourseFields, migrateAddSettingsHolidays,
  *     migrateAddAttendanceSheet, migrateAddStudentLessonDay, migrateAddStudentMonthStatus,
  *     migrateAddStudentLessonTime, migrateAddStudentDurationFields, migrateAddAttendanceSlotFields,
- *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat).
+ *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
+ *     migrateFixInvoiceItemMonthFormat).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -97,6 +98,16 @@ function timeCellToString(v) {
   if (v === '' || v === null || v === undefined) return '';
   if (Object.prototype.toString.call(v) === '[object Date]') {
     return String(v.getHours()).padStart(2, '0') + ':' + String(v.getMinutes()).padStart(2, '0');
+  }
+  return String(v);
+}
+
+// Same problem as timeCellToString but for "YYYY-MM" month strings — Sheets
+// auto-detects "2026-07" as a date, so Apps Script hands back a Date object.
+function monthCellToString(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0');
   }
   return String(v);
 }
@@ -234,7 +245,7 @@ function getAllData() {
       items: invItemRows.filter(ii => String(ii.invoiceId) === id).map(ii => ({
         barcode: String(ii.barcode), name: ii.name,
         originalPrice: Number(ii.originalPrice) || 0, discounted: Number(ii.discounted) || 0,
-        type: ii.type || 'book', month: ii.month || ''
+        type: ii.type || 'book', month: monthCellToString(ii.month)
       })),
       payments: paymentRows.filter(p => String(p.invoiceId) === id).map(p => ({
         date: Number(p.date), amount: Number(p.amount) || 0, method: p.method
@@ -266,7 +277,13 @@ function saveInvoice(inv) {
       inv.teacherId || '', inv.staffId, inv.total, inv.discount || 0, inv.paid || 0, inv.status
     ]);
     const itemSh = sheet(SHEET_NAMES.INVOICE_ITEMS);
-    (inv.items || []).forEach(it => appendRow(itemSh, [inv.id, it.barcode, it.name, it.originalPrice, it.discounted, it.type || 'book', it.month || '']));
+    const itemHeaders = SHEET_HEADERS.InvoiceItems;
+    const monthCol = itemHeaders.indexOf('month');
+    (inv.items || []).forEach(it => {
+      appendRow(itemSh, [inv.id, it.barcode, it.name, it.originalPrice, it.discounted, it.type || 'book', it.month || '']);
+      // Force plain-text format so Sheets doesn't auto-convert "2026-07" into a Date on this or a future save.
+      if (monthCol > -1) itemSh.getRange(itemSh.getLastRow(), monthCol + 1).setNumberFormat('@').setValue(it.month || '');
+    });
     if (inv.payments && inv.payments.length) {
       const paySh = sheet(SHEET_NAMES.PAYMENTS);
       inv.payments.forEach(p => appendRow(paySh, [inv.id, p.date, p.amount, p.method]));
@@ -671,6 +688,21 @@ function migrateFixLessonTimeFormat() {
   range.setNumberFormat('@').setValues(fixed);
   SpreadsheetApp.flush();
   Logger.log('Migration complete — lessonTime column normalized to plain-text HH:mm and locked to Plain Text format.');
+}
+
+function migrateFixInvoiceItemMonthFormat() {
+  const sh = sheet(SHEET_NAMES.INVOICE_ITEMS);
+  if (!sh) { Logger.log('InvoiceItems sheet not found — nothing to do.'); return; }
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const col = headers.indexOf('month');
+  if (col === -1) { Logger.log('month column not found — nothing to do.'); return; }
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('No invoice item rows to fix.'); return; }
+  const range = sh.getRange(2, col + 1, lastRow - 1, 1);
+  const fixed = range.getValues().map(row => [monthCellToString(row[0])]);
+  range.setNumberFormat('@').setValues(fixed);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — InvoiceItems month column normalized to plain-text YYYY-MM and locked to Plain Text format.');
 }
 
 function migrateFixSlotTimeFormat() {

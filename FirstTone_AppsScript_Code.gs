@@ -34,7 +34,8 @@ const SHEET_NAMES = {
   INVOICE_ITEMS: 'InvoiceItems',
   PAYMENTS: 'Payments',
   WRITEOFFS: 'Writeoffs',
-  ATTENDANCE: 'Attendance'
+  ATTENDANCE: 'Attendance',
+  EXPENSES: 'Expenses'
 };
 
 const SHEET_HEADERS = {
@@ -47,7 +48,8 @@ const SHEET_HEADERS = {
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
-  Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId']
+  Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId'],
+  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ function doPost(e) {
       case 'writeoff': result = writeoffInvoice(payload); break;
       case 'cancelInvoice': result = cancelInvoiceBackend(payload); break;
       case 'saveSettings': result = saveSettings(payload); break;
+      case 'saveExpense': result = saveExpense(payload); break;
       default: return jsonOut({ success: false, error: 'Unknown action: ' + action });
     }
     return jsonOut({ success: true, data: result });
@@ -281,7 +284,12 @@ function getAllData() {
     slotTeacherId: r.slotTeacherId ? String(r.slotTeacherId) : ''
   }));
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance };
+  const expenses = sheetToObjects(SHEET_NAMES.EXPENSES).map(r => ({
+    id: String(r.id), date: Number(r.date) || 0, category: r.category || '', description: r.description || '',
+    amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || ''
+  }));
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -448,6 +456,51 @@ function savePerson(payload) {
       if (lessonTimeCol > -1) sh.getRange(targetRow, lessonTimeCol + 1).setNumberFormat('@').setValue(payload.lessonTime || '');
     }
     return { ok: true, id };
+  });
+}
+
+function getOrCreateReceiptsFolder() {
+  const folderName = 'First Tempo Expense Receipts';
+  const folders = DriveApp.getFoldersByName(folderName);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(folderName);
+}
+
+function uploadReceiptToDrive(dataUri, id) {
+  const match = String(dataUri).match(/^data:(.+);base64,(.*)$/);
+  if (!match) return '';
+  const mimeType = match[1];
+  const bytes = Utilities.base64Decode(match[2]);
+  const blob = Utilities.newBlob(bytes, mimeType, 'receipt_' + id);
+  const folder = getOrCreateReceiptsFolder();
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return file.getUrl();
+}
+
+function saveExpense(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.EXPENSES);
+    const headers = SHEET_HEADERS.Expenses;
+    const idCol = headers.indexOf('id');
+
+    if (payload.deleted) {
+      const row = findRowIndexByKey(sh, idCol, payload.id);
+      if (row > -1) sh.deleteRow(row);
+      return { ok: true };
+    }
+
+    const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    let receiptUrl = payload.receiptUrl || '';
+    if (payload.receiptDataUri) {
+      receiptUrl = uploadReceiptToDrive(payload.receiptDataUri, id) || receiptUrl;
+    }
+    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl];
+
+    const foundRow = findRowIndexByKey(sh, idCol, id);
+    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
+    else sh.appendRow(rowArr);
+    return { ok: true, id, receiptUrl };
   });
 }
 
@@ -779,6 +832,16 @@ function migrateAddAttendanceSheet() {
   sh.getRange(1, 1, 1, SHEET_HEADERS.Attendance.length).setValues([SHEET_HEADERS.Attendance]);
   sh.setFrozenRows(1);
   Logger.log('Migration complete — Attendance sheet created.');
+}
+
+function migrateAddExpensesSheet() {
+  const spreadsheet = ss();
+  let sh = spreadsheet.getSheetByName(SHEET_NAMES.EXPENSES);
+  if (sh) { Logger.log('Expenses sheet already exists — nothing to do.'); return; }
+  sh = spreadsheet.insertSheet(SHEET_NAMES.EXPENSES);
+  sh.getRange(1, 1, 1, SHEET_HEADERS.Expenses.length).setValues([SHEET_HEADERS.Expenses]);
+  sh.setFrozenRows(1);
+  Logger.log('Migration complete — Expenses sheet created.');
 }
 
 function migrateAddStudentLessonDay() {

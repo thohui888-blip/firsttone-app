@@ -41,7 +41,7 @@ const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes'],
-  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
@@ -216,7 +216,8 @@ function getAllData() {
     lessonDuration: Number(r.lessonDuration) || 0,
     durationOverride: r.durationOverride === true || r.durationOverride === 'TRUE',
     parentWa: r.parentWa || '',
-    distanceKm: Number(r.distanceKm) || 0
+    distanceKm: Number(r.distanceKm) || 0,
+    address: r.address || ''
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -429,7 +430,7 @@ function savePerson(payload) {
     else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
       JSON.stringify(payload.examRecords || []), payload.lessonDay || '', JSON.stringify(payload.monthStatus || {}), payload.lessonTime || '',
-      payload.lessonDuration || 0, payload.durationOverride ? true : false, payload.parentWa || '', payload.distanceKm || 0];
+      payload.lessonDuration || 0, payload.durationOverride ? true : false, payload.parentWa || '', payload.distanceKm || 0, payload.address || ''];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
@@ -809,4 +810,16 @@ function migrateAddStudentDistanceKm() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(0);
   SpreadsheetApp.flush();
   Logger.log('Migration complete — distanceKm column added to Students.');
+}
+
+function migrateAddStudentAddress() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('address') > -1) { Logger.log('address column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('address');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — address column added to Students.');
 }

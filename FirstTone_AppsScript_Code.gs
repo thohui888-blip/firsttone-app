@@ -35,7 +35,8 @@ const SHEET_NAMES = {
   PAYMENTS: 'Payments',
   WRITEOFFS: 'Writeoffs',
   ATTENDANCE: 'Attendance',
-  EXPENSES: 'Expenses'
+  EXPENSES: 'Expenses',
+  COMMISSION_VOUCHERS: 'CommissionVouchers'
 };
 
 const SHEET_HEADERS = {
@@ -49,7 +50,8 @@ const SHEET_HEADERS = {
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
-  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl']
+  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo'],
+  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -83,6 +85,7 @@ function doPost(e) {
       case 'cancelInvoice': result = cancelInvoiceBackend(payload); break;
       case 'saveSettings': result = saveSettings(payload); break;
       case 'saveExpense': result = saveExpense(payload); break;
+      case 'saveCommissionVoucher': result = saveCommissionVoucher(payload); break;
       default: return jsonOut({ success: false, error: 'Unknown action: ' + action });
     }
     return jsonOut({ success: true, data: result });
@@ -290,10 +293,15 @@ function getAllData() {
 
   const expenses = sheetToObjects(SHEET_NAMES.EXPENSES).map(r => ({
     id: String(r.id), date: Number(r.date) || 0, category: r.category || '', description: r.description || '',
-    amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || ''
+    amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || '', voucherNo: r.voucherNo || ''
   }));
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses };
+  const commissionVouchers = sheetToObjects(SHEET_NAMES.COMMISSION_VOUCHERS).map(r => ({
+    id: String(r.id), teacherId: String(r.teacherId), monthKey: r.monthKey || '',
+    voucherNo: r.voucherNo || '', issuedAt: Number(r.issuedAt) || 0
+  }));
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -500,12 +508,24 @@ function saveExpense(payload) {
     if (payload.receiptDataUri) {
       receiptUrl = uploadReceiptToDrive(payload.receiptDataUri, id) || receiptUrl;
     }
-    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl];
+    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl, payload.voucherNo || ''];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
     if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
     return { ok: true, id, receiptUrl };
+  });
+}
+
+// One row per teacher+month, written once when that voucher's number is first
+// issued (see getOrCreateCommissionVoucherNo in the frontend) — never updated
+// afterward, since the same voucher number must survive every reprint.
+function saveCommissionVoucher(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
+    const rowArr = [payload.id, payload.teacherId, payload.monthKey, payload.voucherNo, payload.issuedAt || Date.now()];
+    appendRow(sh, rowArr);
+    return { ok: true };
   });
 }
 
@@ -872,6 +892,28 @@ function migrateAddExpensesSheet() {
   sh.getRange(1, 1, 1, SHEET_HEADERS.Expenses.length).setValues([SHEET_HEADERS.Expenses]);
   sh.setFrozenRows(1);
   Logger.log('Migration complete — Expenses sheet created.');
+}
+
+function migrateAddExpenseVoucherNo() {
+  const sh = sheet(SHEET_NAMES.EXPENSES);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('voucherNo') > -1) { Logger.log('voucherNo column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('voucherNo');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — voucherNo column added to Expenses.');
+}
+
+function migrateAddCommissionVouchersSheet() {
+  const spreadsheet = ss();
+  let sh = spreadsheet.getSheetByName(SHEET_NAMES.COMMISSION_VOUCHERS);
+  if (sh) { Logger.log('CommissionVouchers sheet already exists — nothing to do.'); return; }
+  sh = spreadsheet.insertSheet(SHEET_NAMES.COMMISSION_VOUCHERS);
+  sh.getRange(1, 1, 1, SHEET_HEADERS.CommissionVouchers.length).setValues([SHEET_HEADERS.CommissionVouchers]);
+  sh.setFrozenRows(1);
+  Logger.log('Migration complete — CommissionVouchers sheet created.');
 }
 
 function migrateAddStudentLessonDay() {

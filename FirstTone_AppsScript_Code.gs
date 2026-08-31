@@ -529,12 +529,33 @@ function saveCommissionVoucher(payload) {
     const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
     const headers = SHEET_HEADERS.CommissionVouchers;
     const idCol = headers.indexOf('id');
-    const rowArr = [payload.id, payload.teacherId, payload.monthKey, payload.voucherNo, payload.issuedAt || Date.now(),
+    const teacherIdCol = headers.indexOf('teacherId');
+    const monthKeyCol = headers.indexOf('monthKey');
+    const voucherNoCol = headers.indexOf('voucherNo');
+    // The frontend's local cache can be stale right after a fire-and-forget sync
+    // (e.g. two saves close together, or a reload before the first one lands) —
+    // if that happens it may send a freshly-generated id/voucherNo believing this is
+    // a new voucher. Enforce one row per teacher+month here regardless: if a row for
+    // this teacher+month already exists (under any id), keep ITS id and voucherNo —
+    // never let two rows, or two PV numbers, exist for the same voucher.
+    let targetRow = -1, rowId = payload.id, rowVoucherNo = payload.voucherNo;
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      const data = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][teacherIdCol]) === String(payload.teacherId) && String(data[i][monthKeyCol]) === String(payload.monthKey)) {
+          targetRow = i + 2;
+          rowId = data[i][idCol];
+          rowVoucherNo = data[i][voucherNoCol];
+          break;
+        }
+      }
+    }
+    const rowArr = [rowId, payload.teacherId, payload.monthKey, rowVoucherNo, payload.issuedAt || Date.now(),
       JSON.stringify(payload.adjustments || []), JSON.stringify(payload.excludedInvoiceIds || []), payload.expenseId || ''];
-    const foundRow = findRowIndexByKey(sh, idCol, payload.id);
-    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
+    if (targetRow > -1) sh.getRange(targetRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
-    return { ok: true };
+    return { ok: true, id: rowId, voucherNo: rowVoucherNo };
   });
 }
 

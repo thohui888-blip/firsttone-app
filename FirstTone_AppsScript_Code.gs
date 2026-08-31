@@ -48,7 +48,7 @@ const SHEET_HEADERS = {
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
-  Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId'],
+  Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified'],
   Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl']
 };
 
@@ -281,7 +281,8 @@ function getAllData() {
     id: String(r.id), studentId: String(r.studentId), date: dateCellToString(r.date), status: r.status,
     leaveBy: r.leaveBy || '', makeupDate: dateCellToString(r.makeupDate), note: r.note || '',
     slotTime: timeCellToString(r.slotTime), slotDuration: Number(r.slotDuration) || 0,
-    slotTeacherId: r.slotTeacherId ? String(r.slotTeacherId) : ''
+    slotTeacherId: r.slotTeacherId ? String(r.slotTeacherId) : '',
+    parentNotified: r.parentNotified === true || r.parentNotified === 'TRUE'
   }));
 
   const expenses = sheetToObjects(SHEET_NAMES.EXPENSES).map(r => ({
@@ -511,7 +512,8 @@ function saveAttendance(payload) {
     const idCol = headers.indexOf('id');
     const rowArr = [payload.id, payload.studentId, payload.date, payload.status,
       payload.leaveBy || '', payload.makeupDate || '', payload.note || '',
-      payload.slotTime || '', payload.slotDuration || 0, payload.slotTeacherId || ''];
+      payload.slotTime || '', payload.slotDuration || 0, payload.slotTeacherId || '',
+      payload.parentNotified ? true : false];
     const foundRow = findRowIndexByKey(sh, idCol, payload.id);
     let targetRow;
     if (foundRow > -1) { sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]); targetRow = foundRow; }
@@ -822,6 +824,18 @@ function migrateAddAttendanceSlotTeacherId() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — slotTeacherId column added to Attendance.');
+}
+
+function migrateAddAttendanceParentNotified() {
+  const sh = sheet(SHEET_NAMES.ATTENDANCE);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('parentNotified') > -1) { Logger.log('parentNotified column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('parentNotified');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(false);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — parentNotified column added to Attendance.');
 }
 
 function migrateAddAttendanceSheet() {

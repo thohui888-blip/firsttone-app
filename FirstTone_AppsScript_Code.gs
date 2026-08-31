@@ -41,7 +41,7 @@ const SHEET_NAMES = {
 const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
   Staff: ['id', 'name'],
-  Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber'],
+  Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber', 'wa'],
   Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
@@ -206,7 +206,8 @@ function getAllData() {
   const teachers = sheetToObjects(SHEET_NAMES.TEACHERS).map(r => ({
     id: String(r.id), name: r.name, notes: r.notes || '',
     courseCode: r.courseCode || '', commissionRate: Number(r.commissionRate) || 0,
-    bankName: r.bankName || '', bankAccount: r.bankAccount || '', icNumber: r.icNumber || ''
+    bankName: r.bankName || '', bankAccount: r.bankAccount || '', icNumber: r.icNumber || '',
+    wa: r.wa || ''
   }));
   const students = sheetToObjects(SHEET_NAMES.STUDENTS).map(r => ({
     id: String(r.id), name: r.name, teacherId: r.teacherId ? String(r.teacherId) : '', notes: r.notes || '',
@@ -440,7 +441,7 @@ function savePerson(payload) {
     const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     let rowArr;
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || '',
-      payload.courseCode || '', payload.commissionRate || 0, payload.bankName || '', payload.bankAccount || '', payload.icNumber || ''];
+      payload.courseCode || '', payload.commissionRate || 0, payload.bankName || '', payload.bankAccount || '', payload.icNumber || '', payload.wa || ''];
     else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
       JSON.stringify(payload.examRecords || []), payload.lessonDay || '', JSON.stringify(payload.monthStatus || {}), payload.lessonTime || '',
@@ -907,6 +908,18 @@ function migrateAddTeacherCommissionFields() {
   });
   SpreadsheetApp.flush();
   Logger.log('Migration complete — courseCode/commissionRate/bankName/bankAccount/icNumber columns added to Teachers.');
+}
+
+function migrateAddTeacherWa() {
+  const sh = sheet(SHEET_NAMES.TEACHERS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('wa') > -1) { Logger.log('wa column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('wa');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — wa column added to Teachers.');
 }
 
 function migrateAddStudentAddress() {

@@ -17,7 +17,8 @@
  *     migrateAddAttendanceSheet, migrateAddStudentLessonDay, migrateAddStudentMonthStatus,
  *     migrateAddStudentLessonTime, migrateAddStudentDurationFields, migrateAddAttendanceSlotFields,
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
- *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat).
+ *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat, migrateAddBillersSheet,
+ *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -36,11 +37,12 @@ const SHEET_NAMES = {
   WRITEOFFS: 'Writeoffs',
   ATTENDANCE: 'Attendance',
   EXPENSES: 'Expenses',
-  COMMISSION_VOUCHERS: 'CommissionVouchers'
+  COMMISSION_VOUCHERS: 'CommissionVouchers',
+  BILLERS: 'Billers'
 };
 
 const SHEET_HEADERS = {
-  Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
+  Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays', 'directorPhone'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber', 'wa', 'nickname'],
   Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address', 'createdAt'],
@@ -50,8 +52,9 @@ const SHEET_HEADERS = {
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
-  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo'],
-  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId']
+  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector'],
+  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId'],
+  Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ function doPost(e) {
       case 'saveSettings': result = saveSettings(payload); break;
       case 'saveExpense': result = saveExpense(payload); break;
       case 'saveCommissionVoucher': result = saveCommissionVoucher(payload); break;
+      case 'saveBiller': result = saveBiller(payload); break;
       default: return jsonOut({ success: false, error: 'Unknown action: ' + action });
     }
     return jsonOut({ success: true, data: result });
@@ -202,7 +206,8 @@ function getAllData() {
     adminPIN: s.adminPIN !== undefined && s.adminPIN !== '' ? String(s.adminPIN) : '9999',
     lowStockThreshold: Number(s.lowStockThreshold || 5),
     supplier: { name: s.supplierName || '', wa: s.supplierWA || '', notes: s.supplierNotes || '' },
-    holidays: (function () { try { return s.holidays ? JSON.parse(s.holidays) : []; } catch (e) { return []; } })()
+    holidays: (function () { try { return s.holidays ? JSON.parse(s.holidays) : []; } catch (e) { return []; } })(),
+    directorPhone: s.directorPhone || ''
   };
 
   const staff = sheetToObjects(SHEET_NAMES.STAFF).map(r => ({ id: String(r.id), name: r.name }));
@@ -293,7 +298,8 @@ function getAllData() {
 
   const expenses = sheetToObjects(SHEET_NAMES.EXPENSES).map(r => ({
     id: String(r.id), date: Number(r.date) || 0, category: r.category || '', description: r.description || '',
-    amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || '', voucherNo: r.voucherNo || ''
+    amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || '', voucherNo: r.voucherNo || '',
+    billerId: r.billerId || '', sentToDirector: r.sentToDirector === true || r.sentToDirector === 'TRUE'
   }));
 
   const commissionVouchers = sheetToObjects(SHEET_NAMES.COMMISSION_VOUCHERS).map(r => ({
@@ -304,7 +310,12 @@ function getAllData() {
     expenseId: r.expenseId || ''
   }));
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers };
+  const billers = sheetToObjects(SHEET_NAMES.BILLERS).map(r => ({
+    id: String(r.id), name: r.name || '', style: r.style || 'utility', category: r.category || '',
+    refNo: r.refNo || '', payeeName: r.payeeName || '', bankName: r.bankName || '', bankAccount: r.bankAccount || ''
+  }));
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers, billers };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -511,12 +522,37 @@ function saveExpense(payload) {
     if (payload.receiptDataUri) {
       receiptUrl = uploadReceiptToDrive(payload.receiptDataUri, id) || receiptUrl;
     }
-    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl, payload.voucherNo || ''];
+    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl, payload.voucherNo || '', payload.billerId || '', payload.sentToDirector === true || payload.sentToDirector === 'true'];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
     if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
     return { ok: true, id, receiptUrl };
+  });
+}
+
+// Recurring bill payees (utilities, landlord, etc.) with fixed account/bank details,
+// used to prefill Cash Flow expenses and to build the combined WhatsApp payment
+// request sent to the director — see buildPaymentRequestMessage in the frontend.
+function saveBiller(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.BILLERS);
+    const headers = SHEET_HEADERS.Billers;
+    const idCol = headers.indexOf('id');
+
+    if (payload.deleted) {
+      const row = findRowIndexByKey(sh, idCol, payload.id);
+      if (row > -1) sh.deleteRow(row);
+      return { ok: true };
+    }
+
+    const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    const rowArr = [id, payload.name || '', payload.style || 'utility', payload.category || '', payload.refNo || '', payload.payeeName || '', payload.bankName || '', payload.bankAccount || ''];
+
+    const foundRow = findRowIndexByKey(sh, idCol, id);
+    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
+    else sh.appendRow(rowArr);
+    return { ok: true, id };
   });
 }
 
@@ -934,6 +970,41 @@ function migrateAddExpenseVoucherNo() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — voucherNo column added to Expenses.');
+}
+
+function migrateAddBillersSheet() {
+  const spreadsheet = ss();
+  let sh = spreadsheet.getSheetByName(SHEET_NAMES.BILLERS);
+  if (sh) { Logger.log('Billers sheet already exists — nothing to do.'); return; }
+  sh = spreadsheet.insertSheet(SHEET_NAMES.BILLERS);
+  sh.getRange(1, 1, 1, SHEET_HEADERS.Billers.length).setValues([SHEET_HEADERS.Billers]);
+  sh.setFrozenRows(1);
+  Logger.log('Migration complete — Billers sheet created.');
+}
+
+function migrateAddSettingsDirectorPhone() {
+  const sh = sheet(SHEET_NAMES.SETTINGS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('directorPhone') > -1) { Logger.log('directorPhone column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('directorPhone');
+  if (sh.getLastRow() > 1) sh.getRange(2, insertAt).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — directorPhone column added to Settings.');
+}
+
+function migrateAddExpenseBillerAndSentColumns() {
+  const sh = sheet(SHEET_NAMES.EXPENSES);
+  ['billerId', 'sentToDirector'].forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) { Logger.log(colName + ' column already exists — nothing to do.'); return; }
+    const insertAt = sh.getLastColumn() + 1;
+    sh.getRange(1, insertAt).setValue(colName);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(colName === 'sentToDirector' ? false : '');
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — billerId and sentToDirector columns added to Expenses.');
 }
 
 function migrateAddCommissionVouchersSheet() {

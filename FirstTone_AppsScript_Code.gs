@@ -18,7 +18,8 @@
  *     migrateAddStudentLessonTime, migrateAddStudentDurationFields, migrateAddAttendanceSlotFields,
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
  *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat, migrateAddBillersSheet,
- *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns).
+ *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns,
+ *     migrateFixCommissionVoucherMonthKeyFormat).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -303,7 +304,7 @@ function getAllData() {
   }));
 
   const commissionVouchers = sheetToObjects(SHEET_NAMES.COMMISSION_VOUCHERS).map(r => ({
-    id: String(r.id), teacherId: String(r.teacherId), monthKey: r.monthKey || '',
+    id: String(r.id), teacherId: String(r.teacherId), monthKey: monthCellToString(r.monthKey),
     voucherNo: r.voucherNo || '', issuedAt: Number(r.issuedAt) || 0,
     adjustments: (function () { try { return r.adjustments ? JSON.parse(r.adjustments) : []; } catch (e) { return []; } })(),
     excludedInvoiceIds: (function () { try { return r.excludedInvoiceIds ? JSON.parse(r.excludedInvoiceIds) : []; } catch (e) { return []; } })(),
@@ -579,7 +580,11 @@ function saveCommissionVoucher(payload) {
     if (lastRow > 1) {
       const data = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
       for (let i = 0; i < data.length; i++) {
-        if (String(data[i][teacherIdCol]) === String(payload.teacherId) && String(data[i][monthKeyCol]) === String(payload.monthKey)) {
+        // monthCellToString, not String() — Sheets can silently auto-convert a
+        // "2026-08"-looking cell to a real Date, and String(Date) never equals
+        // the "2026-08" string we're comparing against, which breaks this
+        // dedup match and lets a duplicate row slip through.
+        if (String(data[i][teacherIdCol]) === String(payload.teacherId) && monthCellToString(data[i][monthKeyCol]) === monthCellToString(payload.monthKey)) {
           targetRow = i + 2;
           rowId = data[i][idCol];
           rowVoucherNo = data[i][voucherNoCol];
@@ -591,6 +596,8 @@ function saveCommissionVoucher(payload) {
       JSON.stringify(payload.adjustments || []), JSON.stringify(payload.excludedInvoiceIds || []), payload.expenseId || ''];
     if (targetRow > -1) sh.getRange(targetRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
+    // Force plain-text so this cell can never be auto-converted to a Date again.
+    if (monthKeyCol > -1) sh.getRange(targetRow > -1 ? targetRow : sh.getLastRow(), monthKeyCol + 1).setNumberFormat('@').setValue(payload.monthKey);
     return { ok: true, id: rowId, voucherNo: rowVoucherNo };
   });
 }
@@ -991,6 +998,26 @@ function migrateAddSettingsDirectorPhone() {
   if (sh.getLastRow() > 1) sh.getRange(2, insertAt).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — directorPhone column added to Settings.');
+}
+
+// One-time repair for existing CommissionVouchers rows whose monthKey cell got
+// silently auto-converted from "2026-08" text into a real Date by Sheets (the
+// column was never forced to plain-text format on write until this version).
+// A corrupted monthKey breaks every teacherId+monthKey lookup — both the
+// dedup check in saveCommissionVoucher and the frontend's restore-on-reopen —
+// which looks like the voucher/exclusions randomly "resetting". Safe to re-run.
+function migrateFixCommissionVoucherMonthKeyFormat() {
+  const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const monthKeyCol = headers.indexOf('monthKey');
+  if (monthKeyCol === -1) { Logger.log('monthKey column not found — nothing to do.'); return; }
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('No CommissionVouchers rows — nothing to do.'); return; }
+  const values = sh.getRange(2, monthKeyCol + 1, lastRow - 1, 1).getValues();
+  const fixed = values.map(row => [monthCellToString(row[0])]);
+  sh.getRange(2, monthKeyCol + 1, fixed.length, 1).setNumberFormat('@').setValues(fixed);
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — monthKey column in CommissionVouchers repaired to plain text for ' + fixed.length + ' row(s).');
 }
 
 function migrateAddExpenseBillerAndSentColumns() {

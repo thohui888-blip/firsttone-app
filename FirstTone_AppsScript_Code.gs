@@ -42,7 +42,7 @@ const SHEET_NAMES = {
 const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays'],
   Staff: ['id', 'name'],
-  Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber', 'wa'],
+  Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber', 'wa', 'nickname'],
   Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address', 'createdAt'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
@@ -51,7 +51,7 @@ const SHEET_HEADERS = {
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
   Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo'],
-  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt']
+  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ function getAllData() {
     id: String(r.id), name: r.name, notes: r.notes || '',
     courseCode: r.courseCode || '', commissionRate: Number(r.commissionRate) || 0,
     bankName: r.bankName || '', bankAccount: r.bankAccount || '', icNumber: r.icNumber || '',
-    wa: r.wa || ''
+    wa: r.wa || '', nickname: r.nickname || ''
   }));
   const students = sheetToObjects(SHEET_NAMES.STUDENTS).map(r => ({
     id: String(r.id), name: r.name, teacherId: r.teacherId ? String(r.teacherId) : '', notes: r.notes || '',
@@ -298,7 +298,10 @@ function getAllData() {
 
   const commissionVouchers = sheetToObjects(SHEET_NAMES.COMMISSION_VOUCHERS).map(r => ({
     id: String(r.id), teacherId: String(r.teacherId), monthKey: r.monthKey || '',
-    voucherNo: r.voucherNo || '', issuedAt: Number(r.issuedAt) || 0
+    voucherNo: r.voucherNo || '', issuedAt: Number(r.issuedAt) || 0,
+    adjustments: (function () { try { return r.adjustments ? JSON.parse(r.adjustments) : []; } catch (e) { return []; } })(),
+    excludedInvoiceIds: (function () { try { return r.excludedInvoiceIds ? JSON.parse(r.excludedInvoiceIds) : []; } catch (e) { return []; } })(),
+    expenseId: r.expenseId || ''
   }));
 
   return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers };
@@ -451,7 +454,7 @@ function savePerson(payload) {
     const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     let rowArr;
     if (payload.type === 'teacher') rowArr = [id, payload.name, payload.notes || '',
-      payload.courseCode || '', payload.commissionRate || 0, payload.bankName || '', payload.bankAccount || '', payload.icNumber || '', payload.wa || ''];
+      payload.courseCode || '', payload.commissionRate || 0, payload.bankName || '', payload.bankAccount || '', payload.icNumber || '', payload.wa || '', payload.nickname || ''];
     else if (payload.type === 'student') rowArr = [id, payload.name, payload.teacherId || '', payload.notes || '', payload.monthlyFee || 0,
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
       JSON.stringify(payload.examRecords || []), payload.lessonDay || '', JSON.stringify(payload.monthStatus || {}), payload.lessonTime || '',
@@ -517,14 +520,20 @@ function saveExpense(payload) {
   });
 }
 
-// One row per teacher+month, written once when that voucher's number is first
-// issued (see getOrCreateCommissionVoucherNo in the frontend) — never updated
-// afterward, since the same voucher number must survive every reprint.
+// One row per teacher+month. The voucher number is issued once and never changes,
+// but adjustments/exclusions get updated in place on every re-save (see
+// saveCommissionVoucherState in the frontend), so reopening the same teacher+month
+// restores exactly what was there instead of resetting.
 function saveCommissionVoucher(payload) {
   return withLock(() => {
     const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
-    const rowArr = [payload.id, payload.teacherId, payload.monthKey, payload.voucherNo, payload.issuedAt || Date.now()];
-    appendRow(sh, rowArr);
+    const headers = SHEET_HEADERS.CommissionVouchers;
+    const idCol = headers.indexOf('id');
+    const rowArr = [payload.id, payload.teacherId, payload.monthKey, payload.voucherNo, payload.issuedAt || Date.now(),
+      JSON.stringify(payload.adjustments || []), JSON.stringify(payload.excludedInvoiceIds || []), payload.expenseId || ''];
+    const foundRow = findRowIndexByKey(sh, idCol, payload.id);
+    if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
+    else sh.appendRow(rowArr);
     return { ok: true };
   });
 }
@@ -916,6 +925,21 @@ function migrateAddCommissionVouchersSheet() {
   Logger.log('Migration complete — CommissionVouchers sheet created.');
 }
 
+function migrateAddCommissionVoucherPersistedState() {
+  const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
+  const defaults = { adjustments: '[]', excludedInvoiceIds: '[]', expenseId: '' };
+  Object.keys(defaults).forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) { Logger.log(colName + ' column already exists — skipping.'); return; }
+    const insertAt = sh.getLastColumn() + 1;
+    sh.getRange(1, insertAt).setValue(colName);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue(defaults[colName]);
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — adjustments/excludedInvoiceIds/expenseId columns added to CommissionVouchers.');
+}
+
 function migrateAddStudentLessonDay() {
   const sh = sheet(SHEET_NAMES.STUDENTS);
   const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
@@ -977,6 +1001,18 @@ function migrateAddTeacherWa() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — wa column added to Teachers.');
+}
+
+function migrateAddTeacherNickname() {
+  const sh = sheet(SHEET_NAMES.TEACHERS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('nickname') > -1) { Logger.log('nickname column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('nickname');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — nickname column added to Teachers.');
 }
 
 function migrateAddStudentAddress() {

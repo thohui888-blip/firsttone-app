@@ -19,7 +19,7 @@
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
  *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat, migrateAddBillersSheet,
  *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns,
- *     migrateFixCommissionVoucherMonthKeyFormat).
+ *     migrateFixCommissionVoucherMonthKeyFormat, migrateAddAuditLogSheet).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -39,7 +39,8 @@ const SHEET_NAMES = {
   ATTENDANCE: 'Attendance',
   EXPENSES: 'Expenses',
   COMMISSION_VOUCHERS: 'CommissionVouchers',
-  BILLERS: 'Billers'
+  BILLERS: 'Billers',
+  AUDIT_LOG: 'AuditLog'
 };
 
 const SHEET_HEADERS = {
@@ -55,7 +56,8 @@ const SHEET_HEADERS = {
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
   Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector'],
   CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId'],
-  Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount']
+  Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount'],
+  AuditLog: ['ts', 'entity', 'entityId', 'field', 'oldValue', 'newValue', 'by', 'reason']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -91,6 +93,7 @@ function doPost(e) {
       case 'saveExpense': result = saveExpense(payload); break;
       case 'saveCommissionVoucher': result = saveCommissionVoucher(payload); break;
       case 'saveBiller': result = saveBiller(payload); break;
+      case 'editInvoice': result = editInvoice(payload); break;
       default: return jsonOut({ success: false, error: 'Unknown action: ' + action });
     }
     return jsonOut({ success: true, data: result });
@@ -316,7 +319,16 @@ function getAllData() {
     refNo: r.refNo || '', payeeName: r.payeeName || '', bankName: r.bankName || '', bankAccount: r.bankAccount || ''
   }));
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers, billers };
+  const auditLog = (function () {
+    if (!sheet(SHEET_NAMES.AUDIT_LOG)) return [];
+    return sheetToObjects(SHEET_NAMES.AUDIT_LOG).map(r => ({
+      ts: Number(r.ts) || 0, entity: r.entity || '', entityId: String(r.entityId || ''), field: r.field || '',
+      oldValue: String(r.oldValue === undefined ? '' : r.oldValue), newValue: String(r.newValue === undefined ? '' : r.newValue),
+      by: r.by || '', reason: r.reason || ''
+    }));
+  })();
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers, billers, auditLog };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -354,15 +366,88 @@ function updatePayment(p) {
   });
 }
 
+// Appends audit rows. Each change is {field, oldValue, newValue}. Skips silently if the
+// AuditLog sheet hasn't been created yet (migrateAddAuditLogSheet not run) so older
+// deployments keep working.
+function writeAuditRows(entity, entityId, changes, by, reason) {
+  const sh = sheet(SHEET_NAMES.AUDIT_LOG);
+  if (!sh) return;
+  const now = Date.now();
+  (changes || []).forEach(c => sh.appendRow([now, entity, entityId, c.field, c.oldValue, c.newValue, by || '', reason || '']));
+}
+
 function cancelInvoiceBackend(payload) {
   return withLock(() => {
     const id = payload.id;
     updateInvoiceFields(id, { status: 'cancelled' });
+    if (payload.audit) writeAuditRows('invoice', id, [{ field: 'status', oldValue: payload.oldStatus || '', newValue: 'cancelled' }], payload.by, payload.reason);
     const invItems = sheetToObjects(SHEET_NAMES.INVOICE_ITEMS).filter(ii => String(ii.invoiceId) === String(id));
     const delta = {};
     invItems.forEach(ii => { delta[String(ii.barcode)] = (delta[String(ii.barcode)] || 0) + 1; });
     adjustItemQtys(delta);
     return { ok: true };
+  });
+}
+
+// In-place correction of an already-saved invoice: payment method/date and a fee item's
+// month (+ its name, which embeds the month). Amounts, students and item add/remove are
+// deliberately NOT editable here — those go through cancel + reissue.
+// An invoice can have several Payments / InvoiceItems rows, so rows are located by their
+// position among that invoice's rows, then verified against the old values the client
+// saw; if the position doesn't line up (e.g. a sync landed out of order) it falls back to
+// matching on the old values, and refuses rather than editing the wrong row.
+function editInvoice(payload) {
+  return withLock(() => {
+    const id = String(payload.invoiceId);
+    const changes = [];
+
+    const paySh = sheet(SHEET_NAMES.PAYMENTS);
+    const payHeaders = SHEET_HEADERS.Payments;
+    const pInv = payHeaders.indexOf('invoiceId'), pDate = payHeaders.indexOf('date'), pAmt = payHeaders.indexOf('amount'), pMethod = payHeaders.indexOf('method');
+    const payData = paySh.getLastRow() > 1 ? paySh.getRange(2, 1, paySh.getLastRow() - 1, payHeaders.length).getValues() : [];
+    const payRows = [];
+    payData.forEach((r, i) => { if (String(r[pInv]) === id) payRows.push({ row: i + 2, vals: r }); });
+    (payload.payments || []).forEach(p => {
+      let target = payRows[p.idx];
+      if (!target || Math.abs(Number(target.vals[pAmt]) - Number(p.oldAmount)) > 0.001) {
+        target = payRows.find(x => Math.abs(Number(x.vals[pAmt]) - Number(p.oldAmount)) <= 0.001 && Number(x.vals[pDate]) === Number(p.oldDate));
+      }
+      if (!target) throw new Error('Payment row not found for invoice ' + id);
+      if (p.method !== undefined && p.method !== String(target.vals[pMethod])) {
+        changes.push({ field: 'payment#' + (p.idx + 1) + ' method', oldValue: target.vals[pMethod], newValue: p.method });
+        paySh.getRange(target.row, pMethod + 1).setValue(p.method);
+      }
+      if (p.date !== undefined && Number(p.date) !== Number(target.vals[pDate])) {
+        changes.push({ field: 'payment#' + (p.idx + 1) + ' date', oldValue: target.vals[pDate], newValue: p.date });
+        paySh.getRange(target.row, pDate + 1).setValue(p.date);
+      }
+    });
+
+    const itemSh = sheet(SHEET_NAMES.INVOICE_ITEMS);
+    const itHeaders = SHEET_HEADERS.InvoiceItems;
+    const iInv = itHeaders.indexOf('invoiceId'), iName = itHeaders.indexOf('name'), iMonth = itHeaders.indexOf('month');
+    const itData = itemSh.getLastRow() > 1 ? itemSh.getRange(2, 1, itemSh.getLastRow() - 1, itHeaders.length).getValues() : [];
+    const itRows = [];
+    itData.forEach((r, i) => { if (String(r[iInv]) === id) itRows.push({ row: i + 2, vals: r }); });
+    (payload.items || []).forEach(it => {
+      let target = itRows[it.idx];
+      if (!target || String(target.vals[iName]) !== String(it.oldName)) {
+        target = itRows.find(x => String(x.vals[iName]) === String(it.oldName));
+      }
+      if (!target) throw new Error('Invoice item row not found for invoice ' + id);
+      const oldMonth = monthCellToString(target.vals[iMonth]);
+      if (it.month !== undefined && it.month !== oldMonth) {
+        changes.push({ field: 'item#' + (it.idx + 1) + ' month', oldValue: oldMonth, newValue: it.month });
+        itemSh.getRange(target.row, iMonth + 1).setNumberFormat('@').setValue(it.month);
+      }
+      // The name just embeds the month, so it follows the month change without its own audit row.
+      if (it.name !== undefined && it.name !== String(target.vals[iName])) {
+        itemSh.getRange(target.row, iName + 1).setValue(it.name);
+      }
+    });
+
+    writeAuditRows('invoice', id, changes, payload.by, payload.reason);
+    return { ok: true, changed: changes.length };
   });
 }
 
@@ -977,6 +1062,18 @@ function migrateAddExpenseVoucherNo() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — voucherNo column added to Expenses.');
+}
+
+function migrateAddAuditLogSheet() {
+  const spreadsheet = ss();
+  let sh = spreadsheet.getSheetByName(SHEET_NAMES.AUDIT_LOG);
+  if (sh) { Logger.log('AuditLog sheet already exists — nothing to do.'); return; }
+  sh = spreadsheet.insertSheet(SHEET_NAMES.AUDIT_LOG);
+  sh.getRange(1, 1, 1, SHEET_HEADERS.AuditLog.length).setValues([SHEET_HEADERS.AuditLog]);
+  sh.setFrozenRows(1);
+  // oldValue/newValue can hold month strings like "2026-08" — keep them as plain text.
+  sh.getRange(2, 5, sh.getMaxRows() - 1, 2).setNumberFormat('@');
+  Logger.log('Migration complete — AuditLog sheet created.');
 }
 
 function migrateAddBillersSheet() {

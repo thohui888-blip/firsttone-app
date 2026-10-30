@@ -19,7 +19,7 @@
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
  *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat, migrateAddBillersSheet,
  *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns,
- *     migrateFixCommissionVoucherMonthKeyFormat, migrateAddAuditLogSheet).
+ *     migrateFixCommissionVoucherMonthKeyFormat, migrateAddAuditLogSheet, migrateAddExpenseFieldsV2).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -54,7 +54,7 @@ const SHEET_HEADERS = {
   Payments: ['invoiceId', 'date', 'amount', 'method'],
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
-  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector'],
+  Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector', 'payee', 'supplierInvNo', 'refNo', 'claimant', 'claimStatus', 'reimbursedDate', 'attachments'],
   CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId'],
   Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount'],
   AuditLog: ['ts', 'entity', 'entityId', 'field', 'oldValue', 'newValue', 'by', 'reason']
@@ -303,7 +303,16 @@ function getAllData() {
   const expenses = sheetToObjects(SHEET_NAMES.EXPENSES).map(r => ({
     id: String(r.id), date: Number(r.date) || 0, category: r.category || '', description: r.description || '',
     amount: Number(r.amount) || 0, method: r.method || 'cash', receiptUrl: r.receiptUrl || '', voucherNo: r.voucherNo || '',
-    billerId: r.billerId || '', sentToDirector: r.sentToDirector === true || r.sentToDirector === 'TRUE'
+    billerId: r.billerId || '', sentToDirector: r.sentToDirector === true || r.sentToDirector === 'TRUE',
+    payee: r.payee || '', supplierInvNo: r.supplierInvNo === undefined ? '' : String(r.supplierInvNo), refNo: r.refNo === undefined ? '' : String(r.refNo),
+    claimant: r.claimant || '', claimStatus: r.claimStatus || 'none', reimbursedDate: Number(r.reimbursedDate) || 0,
+    attachments: (function () {
+      let a = [];
+      try { a = r.attachments ? JSON.parse(r.attachments) : []; } catch (e) { a = []; }
+      // Receipts saved before multi-attachment support only have receiptUrl.
+      if (!a.length && r.receiptUrl) a = [{ url: String(r.receiptUrl), name: 'Receipt' }];
+      return a;
+    })()
   }));
 
   const commissionVouchers = sheetToObjects(SHEET_NAMES.COMMISSION_VOUCHERS).map(r => ({
@@ -579,16 +588,31 @@ function getOrCreateReceiptsFolder() {
   return DriveApp.createFolder(folderName);
 }
 
+// Kept for older cached clients that still send a single receiptDataUri.
 function uploadReceiptToDrive(dataUri, id) {
-  const match = String(dataUri).match(/^data:(.+);base64,(.*)$/);
-  if (!match) return '';
+  return uploadExpenseAttachment({ dataUri: dataUri, name: 'receipt' }, id, Date.now(), 1).url;
+}
+
+// Files go to "First Tempo Expense Receipts/YYYY-MM/<PVno>_<n>_<name>.<ext>" so the accountant
+// can browse a month at a time and every file name already says which voucher it belongs to.
+function getMonthReceiptsFolder(dateTs) {
+  const root = getOrCreateReceiptsFolder();
+  const monthName = Utilities.formatDate(new Date(Number(dateTs) || Date.now()), Session.getScriptTimeZone(), 'yyyy-MM');
+  const sub = root.getFoldersByName(monthName);
+  return sub.hasNext() ? sub.next() : root.createFolder(monthName);
+}
+
+function uploadExpenseAttachment(att, ref, dateTs, n) {
+  const match = String(att.dataUri || '').match(/^data:(.+);base64,(.*)$/);
+  if (!match) return { url: '', name: att.name || '' };
   const mimeType = match[1];
-  const bytes = Utilities.base64Decode(match[2]);
-  const blob = Utilities.newBlob(bytes, mimeType, 'receipt_' + id);
-  const folder = getOrCreateReceiptsFolder();
-  const file = folder.createFile(blob);
+  const ext = mimeType === 'application/pdf' ? '.pdf' : mimeType === 'image/png' ? '.png' : mimeType === 'image/jpeg' ? '.jpg' : '';
+  const base = String(att.name || 'receipt').replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/[^A-Za-z0-9_\- ]/g, '').trim() || 'receipt';
+  const fileName = (ref || 'expense') + '_' + n + '_' + base + ext;
+  const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), mimeType, fileName);
+  const file = getMonthReceiptsFolder(dateTs).createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return file.getUrl();
+  return { url: file.getUrl(), name: fileName };
 }
 
 function saveExpense(payload) {
@@ -604,16 +628,37 @@ function saveExpense(payload) {
     }
 
     const id = payload.id || Utilities.getUuid().replace(/-/g, '').slice(0, 10);
-    let receiptUrl = payload.receiptUrl || '';
-    if (payload.receiptDataUri) {
-      receiptUrl = uploadReceiptToDrive(payload.receiptDataUri, id) || receiptUrl;
-    }
-    const rowArr = [id, payload.date || Date.now(), payload.category || '', payload.description || '', payload.amount || 0, payload.method || 'cash', receiptUrl, payload.voucherNo || '', payload.billerId || '', payload.sentToDirector === true || payload.sentToDirector === 'true'];
-
     const foundRow = findRowIndexByKey(sh, idCol, id);
+    const existing = foundRow > -1 ? sh.getRange(foundRow, 1, 1, headers.length).getValues()[0] : null;
+    // A field the client didn't send keeps whatever the sheet already has, so a partial payload
+    // (e.g. one that only re-sends the older columns) can never blank the newer ones.
+    const pick = (f, dflt) => payload[f] !== undefined ? payload[f] : (existing ? existing[headers.indexOf(f)] : dflt);
+
+    let attachments = [];
+    if (payload.attachments !== undefined) attachments = payload.attachments || [];
+    else if (existing) { try { attachments = JSON.parse(existing[headers.indexOf('attachments')] || '[]'); } catch (e) { attachments = []; } }
+    const dateTs = pick('date', Date.now());
+    const voucherNo = pick('voucherNo', '');
+    const newOnes = (payload.newAttachments || []).slice();
+    if (payload.receiptDataUri) newOnes.push({ dataUri: payload.receiptDataUri, name: 'receipt' });
+    newOnes.forEach(att => {
+      const up = uploadExpenseAttachment(att, voucherNo || id, dateTs, attachments.length + 1);
+      if (up.url) attachments.push({ url: up.url, name: up.name });
+    });
+    const receiptUrl = attachments.length ? attachments[0].url : (payload.receiptUrl !== undefined ? payload.receiptUrl : (existing ? existing[headers.indexOf('receiptUrl')] : ''));
+
+    const sent = pick('sentToDirector', false);
+    const rowArr = [id, dateTs, pick('category', ''), pick('description', ''), pick('amount', 0), pick('method', 'cash'), receiptUrl, voucherNo,
+      pick('billerId', ''), sent === true || sent === 'true' || sent === 'TRUE',
+      pick('payee', ''), pick('supplierInvNo', ''), pick('refNo', ''), pick('claimant', ''), pick('claimStatus', 'none'), pick('reimbursedDate', ''),
+      JSON.stringify(attachments)];
+
     if (foundRow > -1) sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
-    return { ok: true, id, receiptUrl };
+    // Reference numbers like "00123456" must stay text.
+    const rowNo = foundRow > -1 ? foundRow : sh.getLastRow();
+    ['supplierInvNo', 'refNo'].forEach(f => sh.getRange(rowNo, headers.indexOf(f) + 1).setNumberFormat('@').setValue(String(pick(f, ''))));
+    return { ok: true, id, receiptUrl, attachments };
   });
 }
 
@@ -1074,6 +1119,23 @@ function migrateAddAuditLogSheet() {
   // oldValue/newValue can hold month strings like "2026-08" — keep them as plain text.
   sh.getRange(2, 5, sh.getMaxRows() - 1, 2).setNumberFormat('@');
   Logger.log('Migration complete — AuditLog sheet created.');
+}
+
+function migrateAddExpenseFieldsV2() {
+  const sh = sheet(SHEET_NAMES.EXPENSES);
+  ['payee', 'supplierInvNo', 'refNo', 'claimant', 'claimStatus', 'reimbursedDate', 'attachments'].forEach(colName => {
+    const freshHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (freshHeaders.indexOf(colName) > -1) { Logger.log(colName + ' column already exists — nothing to do.'); return; }
+    const insertAt = sh.getLastColumn() + 1;
+    sh.getRange(1, insertAt).setValue(colName);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      const def = colName === 'claimStatus' ? 'none' : colName === 'attachments' ? '[]' : '';
+      sh.getRange(2, insertAt, lastRow - 1, 1).setValue(def);
+    }
+  });
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — payee/supplierInvNo/refNo/claimant/claimStatus/reimbursedDate/attachments added to Expenses.');
 }
 
 function migrateAddBillersSheet() {

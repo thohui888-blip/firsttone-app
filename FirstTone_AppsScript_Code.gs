@@ -19,7 +19,7 @@
  *     migrateAddAttendanceSlotTeacherId, migrateFixLessonTimeFormat, migrateFixSlotTimeFormat,
  *     migrateFixInvoiceItemMonthFormat, migrateFixAttendanceDateFormat, migrateAddBillersSheet,
  *     migrateAddSettingsDirectorPhone, migrateAddExpenseBillerAndSentColumns,
- *     migrateFixCommissionVoucherMonthKeyFormat, migrateAddAuditLogSheet, migrateAddExpenseFieldsV2).
+ *     migrateFixCommissionVoucherMonthKeyFormat, migrateAddAuditLogSheet, migrateAddExpenseFieldsV2, migrateAddBankReconSheets).
  *     All are safe to re-run (no-op if the column already exists) and do NOT wipe data.
  *     Do NOT re-run setupSpreadsheet() on a live sheet — it clears existing data.
  *  3. Deploy > Manage deployments > pencil icon on the active deployment > Version: New version > Deploy.
@@ -40,7 +40,9 @@ const SHEET_NAMES = {
   EXPENSES: 'Expenses',
   COMMISSION_VOUCHERS: 'CommissionVouchers',
   BILLERS: 'Billers',
-  AUDIT_LOG: 'AuditLog'
+  AUDIT_LOG: 'AuditLog',
+  BANK_TXNS: 'BankTxns',
+  PAYER_ALIASES: 'PayerAliases'
 };
 
 const SHEET_HEADERS = {
@@ -57,7 +59,9 @@ const SHEET_HEADERS = {
   Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector', 'payee', 'supplierInvNo', 'refNo', 'claimant', 'claimStatus', 'reimbursedDate', 'attachments'],
   CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId'],
   Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount'],
-  AuditLog: ['ts', 'entity', 'entityId', 'field', 'oldValue', 'newValue', 'by', 'reason']
+  AuditLog: ['ts', 'entity', 'entityId', 'field', 'oldValue', 'newValue', 'by', 'reason'],
+  BankTxns: ['id', 'key', 'date', 'text', 'detail', 'type', 'amount', 'balance', 'month', 'status', 'matches', 'note', 'auto'],
+  PayerAliases: ['id', 'name', 'studentIds', 'teacherId']
 };
 
 // ── ENTRY POINTS ─────────────────────────────────────────────────────────────
@@ -94,6 +98,8 @@ function doPost(e) {
       case 'saveCommissionVoucher': result = saveCommissionVoucher(payload); break;
       case 'saveBiller': result = saveBiller(payload); break;
       case 'editInvoice': result = editInvoice(payload); break;
+      case 'saveBankTxns': result = saveBankTxns(payload); break;
+      case 'saveAlias': result = saveAlias(payload); break;
       default: return jsonOut({ success: false, error: 'Unknown action: ' + action });
     }
     return jsonOut({ success: true, data: result });
@@ -337,7 +343,25 @@ function getAllData() {
     }));
   })();
 
-  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers, billers, auditLog };
+  const bankTxns = (function () {
+    if (!sheet(SHEET_NAMES.BANK_TXNS)) return [];
+    return sheetToObjects(SHEET_NAMES.BANK_TXNS).map(r => ({
+      id: String(r.id), key: String(r.key || ''), date: Number(r.date) || 0, text: String(r.text || ''), detail: String(r.detail || ''),
+      type: String(r.type || ''), amount: Number(r.amount) || 0, balance: r.balance === '' || r.balance === undefined ? null : Number(r.balance),
+      month: monthCellToString(r.month), status: r.status || 'unmatched',
+      matches: (function () { try { return r.matches ? JSON.parse(r.matches) : []; } catch (e) { return []; } })(),
+      note: String(r.note || ''), auto: r.auto === true || r.auto === 'TRUE'
+    }));
+  })();
+  const payerAliases = (function () {
+    if (!sheet(SHEET_NAMES.PAYER_ALIASES)) return [];
+    return sheetToObjects(SHEET_NAMES.PAYER_ALIASES).map(r => ({
+      id: String(r.id), name: String(r.name || ''), teacherId: r.teacherId ? String(r.teacherId) : '',
+      studentIds: (function () { try { return r.studentIds ? JSON.parse(r.studentIds) : []; } catch (e) { return []; } })()
+    }));
+  })();
+
+  return { settings, staff, teachers, students, items, invoices, writeoffs, attendance, expenses, commissionVouchers, billers, auditLog, bankTxns, payerAliases };
 }
 
 // ── WRITE ACTIONS ─────────────────────────────────────────────────────────────
@@ -395,6 +419,61 @@ function cancelInvoiceBackend(payload) {
     invItems.forEach(ii => { delta[String(ii.barcode)] = (delta[String(ii.barcode)] || 0) + 1; });
     adjustItemQtys(delta);
     return { ok: true };
+  });
+}
+
+// Bank statement lines (parsed in the browser from the monthly PDF) and how each was matched
+// to invoice payments / expenses. Upsert by id, in one batch per import/confirm so a whole
+// statement is a single request. Rows are looked up once, not per row.
+function saveBankTxns(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.BANK_TXNS);
+    const headers = SHEET_HEADERS.BankTxns;
+    const idCol = headers.indexOf('id');
+    const monthCol = headers.indexOf('month'), keyCol = headers.indexOf('key');
+    const rows = payload.rows || [];
+    const lastRow = sh.getLastRow();
+    const existing = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, headers.length).getValues() : [];
+    const rowOf = {};
+    existing.forEach((r, i) => { rowOf[String(r[idCol])] = i + 2; });
+    const toRow = t => [t.id, t.key || '', t.date || 0, t.text || '', t.detail || '', t.type || '', t.amount || 0, t.balance === null || t.balance === undefined ? '' : t.balance,
+      t.month || '', t.status || 'unmatched', JSON.stringify(t.matches || []), t.note || '', t.auto === true];
+    const fresh = [];
+    let touched = 0;
+    rows.forEach(t => {
+      const at = rowOf[String(t.id)];
+      if (t.deleted) { if (at) { sh.getRange(at, 1, 1, headers.length).clearContent(); } return; }
+      if (at) { sh.getRange(at, 1, 1, headers.length).setValues([toRow(t)]); sh.getRange(at, monthCol + 1).setNumberFormat('@').setValue(t.month || ''); touched++; }
+      else fresh.push(t);
+    });
+    if (fresh.length) {
+      const start = sh.getLastRow() + 1;
+      // Plain-text first so "2026-09" and long reference keys never get auto-converted.
+      sh.getRange(start, monthCol + 1, fresh.length, 1).setNumberFormat('@');
+      sh.getRange(start, keyCol + 1, fresh.length, 1).setNumberFormat('@');
+      sh.getRange(start, 1, fresh.length, headers.length).setValues(fresh.map(toRow));
+    }
+    return { ok: true, updated: touched, added: fresh.length };
+  });
+}
+
+// "HENG CHIA TYNG" paid for Isabel + Emma last time → remember it so the next transfer from
+// that payer is matched automatically.
+function saveAlias(payload) {
+  return withLock(() => {
+    const sh = sheet(SHEET_NAMES.PAYER_ALIASES);
+    const headers = SHEET_HEADERS.PayerAliases;
+    const idCol = headers.indexOf('id');
+    if (payload.deleted) {
+      const row = findRowIndexByKey(sh, idCol, payload.id);
+      if (row > -1) sh.deleteRow(row);
+      return { ok: true };
+    }
+    const rowArr = [payload.id, payload.name || '', JSON.stringify(payload.studentIds || []), payload.teacherId || ''];
+    const found = findRowIndexByKey(sh, idCol, payload.id);
+    if (found > -1) sh.getRange(found, 1, 1, rowArr.length).setValues([rowArr]);
+    else sh.appendRow(rowArr);
+    return { ok: true, id: payload.id };
   });
 }
 
@@ -1136,6 +1215,23 @@ function migrateAddExpenseFieldsV2() {
   });
   SpreadsheetApp.flush();
   Logger.log('Migration complete — payee/supplierInvNo/refNo/claimant/claimStatus/reimbursedDate/attachments added to Expenses.');
+}
+
+function migrateAddBankReconSheets() {
+  const spreadsheet = ss();
+  [[SHEET_NAMES.BANK_TXNS, SHEET_HEADERS.BankTxns], [SHEET_NAMES.PAYER_ALIASES, SHEET_HEADERS.PayerAliases]].forEach(pair => {
+    let sh = spreadsheet.getSheetByName(pair[0]);
+    if (sh) { Logger.log(pair[0] + ' sheet already exists — nothing to do.'); return; }
+    sh = spreadsheet.insertSheet(pair[0]);
+    sh.getRange(1, 1, 1, pair[1].length).setValues([pair[1]]);
+    sh.setFrozenRows(1);
+    Logger.log('Migration complete — ' + pair[0] + ' sheet created.');
+  });
+  const bt = spreadsheet.getSheetByName(SHEET_NAMES.BANK_TXNS);
+  const h = SHEET_HEADERS.BankTxns;
+  // month ("2026-09") and key must stay plain text or Sheets turns them into dates.
+  bt.getRange(2, h.indexOf('month') + 1, bt.getMaxRows() - 1, 1).setNumberFormat('@');
+  bt.getRange(2, h.indexOf('key') + 1, bt.getMaxRows() - 1, 1).setNumberFormat('@');
 }
 
 function migrateAddBillersSheet() {

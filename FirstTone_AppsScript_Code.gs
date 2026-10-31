@@ -368,6 +368,8 @@ function getAllData() {
 
 function saveInvoice(inv) {
   return withLock(() => {
+    // Idempotent: a retried request for an invoice that is already saved must not add it again.
+    if (findRowIndexByKey(sheet(SHEET_NAMES.INVOICES), 0, inv.id) > -1) return { id: inv.id, duplicate: true };
     appendRow(sheet(SHEET_NAMES.INVOICES), [
       inv.id, inv.no, inv.date, inv.buyerType, inv.buyerId,
       inv.teacherId || '', inv.staffId, inv.total, inv.discount || 0, inv.paid || 0, inv.status
@@ -393,6 +395,9 @@ function saveInvoice(inv) {
 
 function updatePayment(p) {
   return withLock(() => {
+    // Idempotent: skip if this exact payment is already on the invoice (a retried request).
+    const already = sheetToObjects(SHEET_NAMES.PAYMENTS).some(r => String(r.invoiceId) === String(p.invoiceId) && Number(r.date) === Number(p.date) && Number(r.amount) === Number(p.amount) && String(r.method) === String(p.method));
+    if (already) return { ok: true, duplicate: true };
     appendRow(sheet(SHEET_NAMES.PAYMENTS), [p.invoiceId, p.date, p.amount, p.method]);
     updateInvoiceFields(p.invoiceId, { paid: p.newPaid, status: p.newStatus });
     return { ok: true };
@@ -412,6 +417,9 @@ function writeAuditRows(entity, entityId, changes, by, reason) {
 function cancelInvoiceBackend(payload) {
   return withLock(() => {
     const id = payload.id;
+    // Idempotent: cancelling twice must not return the stock twice.
+    const cur = sheetToObjects(SHEET_NAMES.INVOICES).find(r => String(r.id) === String(id));
+    if (cur && cur.status === 'cancelled') return { ok: true, duplicate: true };
     updateInvoiceFields(id, { status: 'cancelled' });
     if (payload.audit) writeAuditRows('invoice', id, [{ field: 'status', oldValue: payload.oldStatus || '', newValue: 'cancelled' }], payload.by, payload.reason);
     const invItems = sheetToObjects(SHEET_NAMES.INVOICE_ITEMS).filter(ii => String(ii.invoiceId) === String(id));
@@ -541,6 +549,8 @@ function editInvoice(payload) {
 
 function writeoffInvoice(payload) {
   return withLock(() => {
+    const cur = sheetToObjects(SHEET_NAMES.INVOICES).find(r => String(r.id) === String(payload.invoiceId));
+    if (cur && cur.status === 'writeoff') return { ok: true, duplicate: true };
     appendRow(sheet(SHEET_NAMES.WRITEOFFS), [
       payload.date, payload.invoiceNo, payload.studentName, payload.amount, payload.reason || 'Bad debt'
     ]);
@@ -1413,4 +1423,53 @@ function migrateAddStudentCreatedAt() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — createdAt column added to Students.');
+}
+
+// ── ONE-TIME CLEAN-UP: invoices that were saved twice ───────────────────────────────────────
+// A request whose reply was lost got re-sent and the old saveInvoice appended the invoice a second
+// time (Invoices, InvoiceItems and Payments each got a second copy). For every invoice id that has
+// more than one Invoices row, keep one row and, if the items / payments are exact repeats of
+// themselves, keep a single copy of those too. Anything that is not a clean repeat is left alone
+// and reported in the log. Safe to run more than once.
+function migrateRemoveDuplicateInvoiceRows() {
+  withLock(() => {
+    const invSh = sheet(SHEET_NAMES.INVOICES);
+    const invData = invSh.getDataRange().getValues();
+    const seen = {}, copies = {};
+    for (let r = 1; r < invData.length; r++) {
+      const id = String(invData[r][0]);
+      if (!id) continue;
+      copies[id] = (copies[id] || 0) + 1;
+    }
+    const dupIds = Object.keys(copies).filter(id => copies[id] > 1);
+    if (!dupIds.length) { Logger.log('No duplicate invoices found — nothing to do.'); return; }
+
+    const dropFromRepeats = (sh, idCol, id, c, label) => {
+      const data = sh.getDataRange().getValues();
+      const rowsOf = [];
+      for (let r = 1; r < data.length; r++) if (String(data[r][idCol]) === id) rowsOf.push(r);
+      if (!rowsOf.length) return 0;
+      if (rowsOf.length % c !== 0) { Logger.log(label + ' for ' + id + ': ' + rowsOf.length + ' rows is not a multiple of ' + c + ' — left alone, check by hand.'); return 0; }
+      const keep = rowsOf.length / c;
+      for (let k = keep; k < rowsOf.length; k++) {
+        if (JSON.stringify(data[rowsOf[k]]) !== JSON.stringify(data[rowsOf[k % keep]])) { Logger.log(label + ' for ' + id + ' are not exact repeats — left alone, check by hand.'); return 0; }
+      }
+      const del = rowsOf.slice(keep).sort((a, b) => b - a);
+      del.forEach(r => sh.deleteRow(r + 1));
+      return del.length;
+    };
+
+    dupIds.forEach(id => {
+      const c = copies[id];
+      const nItems = dropFromRepeats(sheet(SHEET_NAMES.INVOICE_ITEMS), 0, id, c, 'Items');
+      const nPay = dropFromRepeats(sheet(SHEET_NAMES.PAYMENTS), 0, id, c, 'Payments');
+      // Remove the extra Invoices rows (bottom first so row numbers stay valid).
+      const data = invSh.getDataRange().getValues();
+      const rows = [];
+      for (let r = 1; r < data.length; r++) if (String(data[r][0]) === id) rows.push(r);
+      rows.slice(1).sort((a, b) => b - a).forEach(r => invSh.deleteRow(r + 1));
+      Logger.log('Invoice ' + id + ': removed ' + (rows.length - 1) + ' duplicate invoice row(s), ' + nItems + ' item row(s), ' + nPay + ' payment row(s).');
+    });
+    Logger.log('Done. Reload the app.');
+  });
 }

@@ -57,7 +57,7 @@ const SHEET_HEADERS = {
   Writeoffs: ['date', 'invoiceNo', 'studentName', 'amount', 'reason'],
   Attendance: ['id', 'studentId', 'date', 'status', 'leaveBy', 'makeupDate', 'note', 'slotTime', 'slotDuration', 'slotTeacherId', 'parentNotified', 'makeupForDates'],
   Expenses: ['id', 'date', 'category', 'description', 'amount', 'method', 'receiptUrl', 'voucherNo', 'billerId', 'sentToDirector', 'payee', 'supplierInvNo', 'refNo', 'claimant', 'claimStatus', 'reimbursedDate', 'attachments'],
-  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId'],
+  CommissionVouchers: ['id', 'teacherId', 'monthKey', 'voucherNo', 'issuedAt', 'adjustments', 'excludedInvoiceIds', 'expenseId', 'snapshot'],
   Billers: ['id', 'name', 'style', 'category', 'refNo', 'payeeName', 'bankName', 'bankAccount'],
   AuditLog: ['ts', 'entity', 'entityId', 'field', 'oldValue', 'newValue', 'by', 'reason'],
   BankTxns: ['id', 'key', 'date', 'text', 'detail', 'type', 'amount', 'balance', 'month', 'status', 'matches', 'note', 'auto'],
@@ -327,7 +327,8 @@ function getAllData() {
     voucherNo: r.voucherNo || '', issuedAt: Number(r.issuedAt) || 0,
     adjustments: (function () { try { return r.adjustments ? JSON.parse(r.adjustments) : []; } catch (e) { return []; } })(),
     excludedInvoiceIds: (function () { try { return r.excludedInvoiceIds ? JSON.parse(r.excludedInvoiceIds) : []; } catch (e) { return []; } })(),
-    expenseId: r.expenseId || ''
+    expenseId: r.expenseId || '',
+    snapshot: (function () { try { return r.snapshot ? JSON.parse(r.snapshot) : null; } catch (e) { return null; } })()
   }));
 
   const billers = sheetToObjects(SHEET_NAMES.BILLERS).map(r => ({
@@ -800,7 +801,7 @@ function saveCommissionVoucher(payload) {
     // a new voucher. Enforce one row per teacher+month here regardless: if a row for
     // this teacher+month already exists (under any id), keep ITS id and voucherNo —
     // never let two rows, or two PV numbers, exist for the same voucher.
-    let targetRow = -1, rowId = payload.id, rowVoucherNo = payload.voucherNo;
+    let targetRow = -1, rowId = payload.id, rowVoucherNo = payload.voucherNo, rowSnapshot;
     const lastRow = sh.getLastRow();
     if (lastRow > 1) {
       const data = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
@@ -813,12 +814,15 @@ function saveCommissionVoucher(payload) {
           targetRow = i + 2;
           rowId = data[i][idCol];
           rowVoucherNo = data[i][voucherNoCol];
+          rowSnapshot = data[i][headers.indexOf('snapshot')];
           break;
         }
       }
     }
     const rowArr = [rowId, payload.teacherId, payload.monthKey, rowVoucherNo, payload.issuedAt || Date.now(),
-      JSON.stringify(payload.adjustments || []), JSON.stringify(payload.excludedInvoiceIds || []), payload.expenseId || ''];
+      JSON.stringify(payload.adjustments || []), JSON.stringify(payload.excludedInvoiceIds || []), payload.expenseId || '',
+      // A client that doesn't send the stored copy (an older cached page) must not wipe it.
+      payload.snapshot === undefined ? (rowSnapshot === undefined ? '' : rowSnapshot) : JSON.stringify(payload.snapshot)];
     if (targetRow > -1) sh.getRange(targetRow, 1, 1, rowArr.length).setValues([rowArr]);
     else sh.appendRow(rowArr);
     // Force plain-text so this cell can never be auto-converted to a Date again.
@@ -1492,4 +1496,15 @@ function migrateAddStudentUpgradesColumn() {
   if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
   SpreadsheetApp.flush();
   Logger.log('Migration complete — upgrades column added to Students.');
+}
+
+// ── Locked (issued) commission vouchers: adds the "snapshot" column to CommissionVouchers. Safe to re-run.
+function migrateAddVoucherSnapshotColumn() {
+  const sh = sheet(SHEET_NAMES.COMMISSION_VOUCHERS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('snapshot') > -1) { Logger.log('snapshot column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('snapshot');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — snapshot column added to CommissionVouchers.');
 }

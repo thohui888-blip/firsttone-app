@@ -49,7 +49,7 @@ const SHEET_HEADERS = {
   Settings: ['staffPIN', 'adminPIN', 'lowStockThreshold', 'supplierName', 'supplierWA', 'supplierNotes', 'holidays', 'directorPhone'],
   Staff: ['id', 'name'],
   Teachers: ['id', 'name', 'notes', 'courseCode', 'commissionRate', 'bankName', 'bankAccount', 'icNumber', 'wa', 'nickname'],
-  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address', 'createdAt'],
+  Students: ['id', 'name', 'teacherId', 'notes', 'monthlyFee', 'ageGroup', 'instrument', 'grade', 'icNumber', 'feeOverride', 'examRecords', 'lessonDay', 'monthStatus', 'lessonTime', 'lessonDuration', 'durationOverride', 'parentWa', 'distanceKm', 'address', 'createdAt', 'upgrades'],
   Items: ['barcode', 'name', 'type', 'category', 'itemNo', 'tags', 'price', 'cost', 'qty', 'alertOn', 'createdAt'],
   Invoices: ['id', 'no', 'date', 'buyerType', 'buyerId', 'teacherId', 'staffId', 'total', 'discount', 'paid', 'status'],
   InvoiceItems: ['invoiceId', 'barcode', 'name', 'originalPrice', 'discounted', 'type', 'month'],
@@ -244,7 +244,8 @@ function getAllData() {
     parentWa: r.parentWa || '',
     distanceKm: Number(r.distanceKm) || 0,
     address: r.address || '',
-    createdAt: Number(r.createdAt) || 0
+    createdAt: Number(r.createdAt) || 0,
+    upgrades: (function () { try { return r.upgrades ? JSON.parse(r.upgrades) : []; } catch (e) { return []; } })()
   }));
 
   const itemRows = sheetToObjects(SHEET_NAMES.ITEMS);
@@ -654,10 +655,15 @@ function savePerson(payload) {
       payload.ageGroup || 'child', payload.instrument || '', payload.grade || '', payload.icNumber || '', payload.feeOverride ? true : false,
       JSON.stringify(payload.examRecords || []), payload.lessonDay || '', JSON.stringify(payload.monthStatus || {}), payload.lessonTime || '',
       payload.lessonDuration || 0, payload.durationOverride ? true : false, payload.parentWa || '', payload.distanceKm || 0, payload.address || '',
-      payload.createdAt || ''];
+      payload.createdAt || '', payload.upgrades === undefined ? '__KEEP__' : JSON.stringify(payload.upgrades || [])];
     else rowArr = [id, payload.name];
 
     const foundRow = findRowIndexByKey(sh, idCol, id);
+    // A client that doesn't send the upgrade history (an older cached page) must not wipe it.
+    if (payload.type === 'student' && rowArr[rowArr.length - 1] === '__KEEP__') {
+      const upCol = headers.indexOf('upgrades');
+      rowArr[rowArr.length - 1] = foundRow > -1 && upCol > -1 ? sh.getRange(foundRow, upCol + 1).getValue() : '';
+    }
     let targetRow;
     if (foundRow > -1) { sh.getRange(foundRow, 1, 1, rowArr.length).setValues([rowArr]); targetRow = foundRow; }
     else { sh.appendRow(rowArr); targetRow = sh.getLastRow(); }
@@ -1472,4 +1478,18 @@ function migrateRemoveDuplicateInvoiceRows() {
     });
     Logger.log('Done. Reload the app.');
   });
+}
+
+// ── Student upgrade history (grade / lesson length / monthly fee, effective from a month) ───────────
+// Adds the "upgrades" column to Students. Safe to run more than once.
+function migrateAddStudentUpgradesColumn() {
+  const sh = sheet(SHEET_NAMES.STUDENTS);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('upgrades') > -1) { Logger.log('upgrades column already exists — nothing to do.'); return; }
+  const insertAt = sh.getLastColumn() + 1;
+  sh.getRange(1, insertAt).setValue('upgrades');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) sh.getRange(2, insertAt, lastRow - 1, 1).setValue('');
+  SpreadsheetApp.flush();
+  Logger.log('Migration complete — upgrades column added to Students.');
 }
